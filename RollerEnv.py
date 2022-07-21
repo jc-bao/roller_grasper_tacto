@@ -241,6 +241,7 @@ class RollingEnv:
       return vel_last
 
     error = np.matrix(goal - state).T
+    print(goal, state, error)
     vel = K.dot(error)
     vel = np.array(vel).T[0]
 
@@ -325,7 +326,7 @@ class RollingEnv:
 
     self.logs["goal"] = goal
 
-    for i in range(simulation_time):
+    for _ in range(simulation_time):
       pb.changeConstraint(self.cid, xyz, maxForce=5)
 
       # position, orientation = self.digits.get_pose(self.objId, -1)
