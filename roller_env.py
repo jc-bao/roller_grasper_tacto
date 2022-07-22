@@ -343,13 +343,13 @@ if __name__ == '__main__':
   env = RollerEnv()
   obs = env.reset()
   for _ in range(1000):
-    act = env.ezpolicy(obs)
-    # act = env.action_space.new()
-    # act['wrist_vel'] = 0
-    # act['pitch_l_vel'] = 1.
-    # act['pitch_r_vel'] = 1.
-    # act['roll_l_vel'] = 0.
-    # act['roll_r_vel'] = 0.
+    # act = env.ezpolicy(obs)
+    act = env.action_space.new()
+    act['wrist_vel'] = 0
+    act['pitch_l_vel'] = 1.
+    act['pitch_r_vel'] = 1.
+    act['roll_l_vel'] = 0.
+    act['roll_r_vel'] = 0.
     obs, rew, done, info = env.step(act)
     # if done:
     #   obs = env.reset()
