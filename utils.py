@@ -76,3 +76,7 @@ def convert_obs_to_obs_space(obs):
   if isinstance(obs, collections.abc.Mapping):
     # SpaceDict inherits from gym.spaces.Dict and provides more functionalities
     return px.utils.SpaceDict({k: convert_obs_to_obs_space(v) for k, v in obs.items()})
+
+def unifrom_sample_quaternion():
+  q = p.getQuaternionFromEuler([np.random.uniform(-np.pi, np.pi), np.random.uniform(-np.pi, np.pi), np.random.uniform(-np.pi, np.pi)])
+  return q

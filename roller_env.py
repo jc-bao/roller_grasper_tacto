@@ -12,8 +12,9 @@ import cv2
 import gym
 from gym import spaces
 from gym.envs.registration import register
+from scipy.spatial.transform import Rotation as R
 
-from utils import Camera, convert_obs_to_obs_space
+from utils import Camera, convert_obs_to_obs_space, unifrom_sample_quaternion
 
 log = logging.getLogger(__name__)
 
@@ -251,16 +252,19 @@ class RollerEnv(gym.Env):
           "position": np.array(obj_pose[0]),
           "orientation": np.array(obj_pose[1]),
         },
+        "goal": self.goal
       }
     )
 
   def reset(self):
     self.robot.reset()
+    # sample goal
+    self.goal = unifrom_sample_quaternion()
     # Move the object to random location
     dx, dy = np.random.randn(2) * 0.0
     x, y, z = self.obj.init_base_position
     position = [x + dx, y + dy, z]
-    self.obj.set_base_pose(position)
+    self.obj.set_base_pose(position, unifrom_sample_quaternion())
     # get initial observation
     self.obs = self._get_obs()
     return self.obs
@@ -272,6 +276,48 @@ class RollerEnv(gym.Env):
     img = np.concatenate([digit.depth for digit in self.obs.sensor], axis=1)
     cv2.imshow("img", img)
     cv2.waitKey(1)
+
+  def ezpolicy(self, obs):
+    # ===parse observation===
+    goal_orn = R.from_quat(np.concatenate([obs['robots']['goal_state'][...,1:], obs['goal_state'][...,[0]]], axis=-1))
+    obj_orn = R.from_quat(
+      np.concatenate([obs['prop/orientation'][...,1:], obs['prop/orientation'][...,[0]]], axis=-1))
+    robot_orn = R.from_euler('z', obs['roller_hand/joint_positions'][...,[0]])
+    diff_orn = goal_orn * obj_orn.inv()
+    pitch = -obs['roller_hand/joint_positions'][...,2] % (2 * np.pi)
+    # ===calculate angular velocity===
+    omega = 0.5 * 2 * ((diff_orn).as_quat())[...,:3]
+    # omega *= ((diff_orn.as_quat()[..., 3] > 0) *2 - 1)
+    omega *= ((diff_orn.as_quat()[..., 3] > 0) *2 - 1)
+    local_omega = robot_orn.apply(omega) * 10
+    local_omega_norm = np.linalg.norm(local_omega)
+    if local_omega_norm > 1:
+      local_omega /= local_omega_norm 
+    # ===calculate action===
+    if len(obs['roller_hand/joint_positions'].shape) == 1:
+      action = np.zeros((1, 5))
+    else:
+      action = np.zeros((*obs['roller_hand/joint_positions'].shape[:-1], 5))
+    action[..., 0] = -(local_omega[...,2] - local_omega[...,1] * np.tan(pitch))
+    action[..., 1] = -local_omega[..., 0]
+    action[..., 3] = -local_omega[..., 0]
+    action[..., 2] = local_omega[..., 1] / np.cos(pitch)
+    action[..., 4] = local_omega[..., 1] / np.cos(pitch)
+    action[..., 2] = local_omega[..., 1] / np.cos(pitch)
+    action[..., 4] = local_omega[..., 1] / np.cos(pitch)
+    # compensate for the drop down
+    roller_orn_local = R.from_euler('x', pitch)
+    roller_orn = roller_orn_local * robot_orn.inv()
+    obj_pos = obs['prop/position']
+    obj_pos[...,2] -= 0.05
+    obj_pos_local = roller_orn.apply(obj_pos)
+    action[...,2] += obj_pos_local[..., 2] * 1
+    action[...,4] -= obj_pos_local[..., 2] * 1
+    if len(obs['roller_hand/joint_positions'].shape) == 1:
+      return action[0]
+    else:
+      return action
+
 
   def close(self):
     pass
@@ -310,4 +356,6 @@ if __name__ == '__main__':
     for k, v in act.items():
       act[k] = v*0
     act['wrist_vel'][0] = 1
-    env.step(act)
+    obs, rew, done, info = env.step(act)
+    print(obs)
+    exit()
