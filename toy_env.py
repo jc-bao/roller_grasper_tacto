@@ -149,13 +149,13 @@ class RollingEnv(gym.Env):
 
     # Add constraint to movable roller (upper)
     cid = pb.createConstraint(
-      rollerID2, -1, -1, -
-      1, pb.JOINT_FIXED, [0, 0, 0], [0, 0, 0], [0.05,0,0],
+      rollerID2, -1, -1, -1, 
+      pb.JOINT_FIXED, [0, 0, 0], [0, 0, 0], [0.05,0,0],
+      childFrameOrientation=rollerOrn2
     )
 
     # Save variables
     self.roller = roller
-
     self.rollerID1, self.rollerPos1, self.rollerOrn1 = rollerID1, rollerPos1, rollerOrn1
     self.rollerID2, self.rollerPos2, self.rollerOrn2 = rollerID2, rollerPos2, rollerOrn2
     self.objId, self.objPos, self.objOrn = objId, objPos, objOrn
@@ -172,7 +172,7 @@ class RollingEnv(gym.Env):
     # reset xyz position of upper roller
     self.xyz = [self.grasp_distance, 0, 0]
     pb.changeConstraint(self.cid, self.xyz, maxForce=5)
-    for i in range(10):
+    for _ in range(10):
       pb.stepSimulation()
     self.roller.update()
     self.error = 0
@@ -205,10 +205,8 @@ class RollingEnv(gym.Env):
     maxDepth = depth[ind]
     if maxDepth < 0.0005:
       return None
-    center = np.array(
-      [ind[0] / self.tactoResolution[1], ind[1] / self.tactoResolution[0]]
-    )
-    return center
+    return np.array(
+        [ind[0] / self.tactoResolution[1], ind[1] / self.tactoResolution[0]])
 
   def step_sim(self, render=True):
     """
