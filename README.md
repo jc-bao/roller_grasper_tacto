@@ -1,6 +1,6 @@
-# Roller Grasper v4 Environment
+# Roller Grasper v4 Tacto Environment
 
-Based on PyBullet and Tactile. 
+Based on PyBullet and Tacto. 
 
 ## Usage
 
