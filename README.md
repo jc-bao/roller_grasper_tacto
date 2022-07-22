@@ -20,9 +20,9 @@ pip install scipyplot deepdish tacto
 
 ### L1
 
-- [ ] Replace Sensor with Roller
+- [x] Replace Sensor with Roller (2022.07.21)
 - [ ] Handcrafted policy for reorientation
 
 ### L2
 
-- [ ] Gym Wrapper
+- [x] Gym Wrapper (2022.07.21)
