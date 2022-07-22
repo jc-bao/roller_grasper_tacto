@@ -18,4 +18,10 @@ pip install scipyplot deepdish tacto
 
 ## TODO List
 
+### L1
+
 - [ ] Replace Sensor with Roller
+
+### L2
+
+- [ ] Gym Wrapper

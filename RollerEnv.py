@@ -1,8 +1,3 @@
-# # Copyright (c) Facebook, Inc. and its affiliates.
-
-# # This source code is licensed under the MIT license found in the
-# # LICENSE file in the root directory of this source tree.
-
 import time
 
 import cv2
@@ -116,11 +111,12 @@ class RollingEnv:
     Create scene and tacto simulator
     """
 
-    # Initialize digits
-    digits = tacto.Sensor(
+    # Initialize roller
+    roller = tacto.Sensor(
       width=self.tactoResolution[0],
       height=self.tactoResolution[1],
       visualize_gui=self.visTacto,
+      config_path='assets/sensors/roller.yml',
     )
 
     if self.visPyBullet:
@@ -141,25 +137,25 @@ class RollingEnv:
 
     pb.loadURDF("plane.urdf")  # Create plane
 
-    digitURDF = "assets/sensors/digit.urdf"
-    # Set upper digit
-    digitPos1 = [0, 0, 0.011]
-    digitOrn1 = pb.getQuaternionFromEuler([0, -np.pi / 2, 0])
-    digitID1 = pb.loadURDF(
-      digitURDF,
-      basePosition=digitPos1,
-      baseOrientation=digitOrn1,
+    rollerURDF = "assets/sensors/roller.urdf"
+    # Set upper roller
+    rollerPos1 = [0, 0, 0.011]
+    rollerOrn1 = pb.getQuaternionFromEuler([0, -np.pi / 2, 0])
+    rollerID1 = pb.loadURDF(
+      rollerURDF,
+      basePosition=rollerPos1,
+      baseOrientation=rollerOrn1,
       useFixedBase=True,
     )
-    digits.add_camera(digitID1, [-1])
+    roller.add_camera(rollerID1, [-1])
 
-    # Set lower digit
-    digitPos2 = [0, 0, 0.07]
-    digitOrn2 = pb.getQuaternionFromEuler([0, np.pi / 2, np.pi])
-    digitID2 = pb.loadURDF(
-      digitURDF, basePosition=digitPos2, baseOrientation=digitOrn2,
+    # Set lower roller
+    rollerPos2 = [0, 0, 0.07]
+    rollerOrn2 = pb.getQuaternionFromEuler([0, np.pi / 2, np.pi])
+    rollerID2 = pb.loadURDF(
+      rollerURDF, basePosition=rollerPos2, baseOrientation=rollerOrn2,
     )
-    digits.add_camera(digitID2, [-1])
+    roller.add_camera(rollerID2, [-1])
 
     # Create object and GUI controls
     init_xyz = np.array([0, 0.0, 8])
@@ -171,20 +167,20 @@ class RollingEnv:
     globalScaling = 0.15
 
     # Add ball urdf into pybullet and tacto
-    objId = digits.loadURDF(urdfObj, objPos, objOrn,
+    objId = roller.loadURDF(urdfObj, objPos, objOrn,
                             globalScaling=globalScaling)
 
-    # Add constraint to movable digit (upper)
+    # Add constraint to movable roller (upper)
     cid = pb.createConstraint(
-      digitID2, -1, -1, -
+      rollerID2, -1, -1, -
       1, pb.JOINT_FIXED, [0, 0, 0], [0, 0, 0], init_xyz / 100
     )
 
     # Save variables
-    self.digits = digits
+    self.roller = roller
 
-    self.digitID1, self.digitPos1, self.digitOrn1 = digitID1, digitPos1, digitOrn1
-    self.digitID2, self.digitPos2, self.digitOrn2 = digitID2, digitPos2, digitOrn2
+    self.rollerID1, self.rollerPos1, self.rollerOrn1 = rollerID1, rollerPos1, rollerOrn1
+    self.rollerID2, self.rollerPos2, self.rollerOrn2 = rollerID2, rollerPos2, rollerOrn2
     self.objId, self.objPos, self.objOrn = objId, objPos, objOrn
     self.cid = cid
 
@@ -195,7 +191,7 @@ class RollingEnv:
 
     pb.resetBasePositionAndOrientation(self.objId, self.objPos, self.objOrn)
     pb.resetBasePositionAndOrientation(
-      self.digitID2, self.digitPos2, self.digitOrn2
+      self.rollerID2, self.rollerPos2, self.rollerOrn2
     )
 
     xyz = [0, 0, 0.055]
@@ -203,7 +199,7 @@ class RollingEnv:
 
     for i in range(10):
       pb.stepSimulation()
-    self.digits.update()
+    self.roller.update()
 
     self.error = 0
 
@@ -241,7 +237,6 @@ class RollingEnv:
       return vel_last
 
     error = np.matrix(goal - state).T
-    print(goal, state, error)
     vel = K.dot(error)
     vel = np.array(vel).T[0]
 
@@ -262,9 +257,9 @@ class RollingEnv:
 
     st = time.time()
     # Sync tacto
-    self.digits.update()
+    self.roller.update()
     # Render tactile imprints
-    self.color, self.depth = self.digits.render()
+    self.color, self.depth = self.roller.render()
 
     self.time_render.append(time.time() - st)
     self.time_render = self.time_render[-100:]
@@ -285,7 +280,7 @@ class RollingEnv:
 
       # color1 = draw_circle(color1, self.goal)
       self.color[1] = color1
-      self.digits.updateGUI(self.color, self.depth)
+      self.roller.updateGUI(self.color, self.depth)
 
     self.time_vis.append(time.time() - st)
     self.time_vis = self.time_vis[-100:]
@@ -326,10 +321,10 @@ class RollingEnv:
 
     self.logs["goal"] = goal
 
-    for _ in range(simulation_time):
+    for i in range(simulation_time):
       pb.changeConstraint(self.cid, xyz, maxForce=5)
 
-      # position, orientation = self.digits.get_pose(self.objId, -1)
+      # position, orientation = self.roller.get_pose(self.objId, -1)
 
       self.step()
 
