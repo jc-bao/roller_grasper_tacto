@@ -126,6 +126,11 @@
 
 
   <link name="link4_left">
+    <!-- <contact>
+      <rolling_friction value="1"/>
+      <spinning_friction value="1"/>
+      <lateral_friction value="10"/>
+    </contact> -->
     <inertial>
       <origin rpy="0 0 0" xyz="0 0 0.0" />
       <mass value="0.5" />
@@ -254,6 +259,14 @@
 
 
   <link name="link4_right">
+    <!-- <contact>
+      <rolling_friction value="0.1"/>
+      <spinning_friction value="0.1"/>
+      <rolling_friction value="1"/>
+      <spinning_friction value="1"/>
+      <lateral_friction value="10"/>
+    </contact> -->
+
     <inertial>
       <origin rpy="0 0 0" xyz="0 0 0.0" />
       <mass value="0.5" />
@@ -290,7 +303,7 @@
     <origin rpy="0 3.1415 0" xyz="0 0 0.0" />
     <parent link="base" />
     <child link="roller_baselink" />
-    <axis xyz="0 0 1" />
+    <axis xyz="0 0 -1" />
     <limit effort="10.0" lower="-10000" upper="10000" velocity="10000" />
     <dynamics damping="0.0" friction="0.0" />
   </joint>
@@ -323,7 +336,7 @@
   </joint>
 
   <joint name="joint4_left" type="revolute">
-    <origin xyz="0.0 0.0368 0.0" rpy="0 0 0" />
+    <origin xyz="0.0 0.0368 0.0" rpy="0 1.57 0" />
     <parent link="link3_left" />
     <child link="link4_left" />
     <axis xyz="0 0 1" />
@@ -332,7 +345,7 @@
   </joint>
 
   <joint name="joint5_left" type="fixed">
-    <origin xyz="0.0 0.0368 0.0" rpy="0 0 0" />
+    <origin xyz="0.0 0.0368 0.0" rpy="0 1.57 0" />
     <parent link="link3_left" />
     <child link="link5_left" />
     <axis xyz="0 0 1" />
@@ -346,7 +359,7 @@
     <parent link="roller_baselink" />
     <child link="link1_right" />
     <axis xyz="0 1 0" />
-    <limit effort="10.0" lower="0.01" upper="0.03" velocity="10000" />
+    <limit effort="10.0" lower="-0.01" upper="0.03" velocity="10000" />
     <dynamics damping="0.0" friction="0.0" />
   </joint>
 
@@ -369,7 +382,7 @@
   </joint>
 
   <joint name="joint4_right" type="revolute">
-    <origin xyz="0.0 -0.0368 0.0" rpy="0 0 0" />
+    <origin xyz="0.0 -0.0368 0.0" rpy="0 1.57 0" />
     <parent link="link3_right" />
     <child link="link4_right" />
     <axis xyz="0 0 1" />
@@ -378,7 +391,7 @@
   </joint>
 
   <joint name="joint5_right" type="fixed">
-    <origin xyz="0.0 0.0368 0.0" rpy="0 0 0" />
+    <origin xyz="0.0 0.0368 0.0" rpy="0 1.57 0" />
     <parent link="link3_right" />
     <child link="link5_right" />
     <axis xyz="0 0 1" />

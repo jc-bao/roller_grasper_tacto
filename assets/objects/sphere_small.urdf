@@ -2,8 +2,12 @@
 <robot name="urdf_robot">
   <link name="base_link">
     <contact>
-      <rolling_friction value="0.001"/>
-      <spinning_friction value="0.001"/>
+      <rolling_friction value="0.01"/>
+      <spinning_friction value="0.01"/>
+      <lateral_friction value="5000"/>
+      <restitution value="0.1"/>
+      <damping value="100" /> 
+      <stiffness value="5000" />
     </contact>
     <inertial>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -28,4 +32,3 @@
     </collision>
   </link>
 </robot>
-
