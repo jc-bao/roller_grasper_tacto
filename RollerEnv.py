@@ -6,30 +6,25 @@ import numpy as np
 import pybullet as pb
 import pybullet_data
 import tacto
+import gym
 
 
 class Camera:
   def __init__(self, cameraResolution=[320, 240]):
     self.cameraResolution = cameraResolution
-
     camTargetPos = [-0.01, 0, 0.04]
     camDistance = 0.05
     upAxisIndex = 2
-
     yaw = 0
     pitch = -20.0
     roll = 0
-
     fov = 60
     nearPlane = 0.01
     farPlane = 100
-
     self.viewMatrix = pb.computeViewMatrixFromYawPitchRoll(
       camTargetPos, camDistance, yaw, pitch, roll, upAxisIndex
     )
-
     aspect = cameraResolution[0] / cameraResolution[1]
-
     self.projectionMatrix = pb.computeProjectionMatrixFOV(
       fov, aspect, nearPlane, farPlane
     )
@@ -44,37 +39,28 @@ class Camera:
       lightDirection=[1, 1, 1],
       renderer=pb.ER_BULLET_HARDWARE_OPENGL,
     )
-
     rgb = img_arr[2]  # color data RGB
     dep = img_arr[3]  # depth data
     return rgb, dep
 
-
 def draw_circle(img, state):
   if state is None:
     return img
-
   # Center coordinates
   center_coordinates = (
     int(state[1] * img.shape[1]), int(state[0] * img.shape[0]))
-
   # Radius of circle
   radius = 7
-
   # Red color in BGR
   color = (255, 255, 255)
-
   # Line thickness of -1 px
   thickness = -1
-
-  # Using cv2.circle() method
   # Draw a circle of red color of thickness -1 px
   img = cv2.circle(img, center_coordinates, radius, color, thickness)
-
   return img
 
 
-class RollingEnv:
+class RollingEnv(gym.Env):
   def __init__(
       self,
       tactoResolution=[120, 160],
@@ -97,11 +83,10 @@ class RollingEnv:
     self.visPyBullet = visPyBullet
     self.visTacto = visTacto
     self.skipFrame = skipFrame
-
+    # basic parameters
     self.error = 0
-
+    self.grasp_z = 0.055
     self.create_scene()
-
     self.cam = Camera(cameraResolution=[320, 240])
     self.logs = {"touch": [], "vision": [], "states": [], "goal": None}
     self.recordLogs = recordLogs
@@ -110,7 +95,6 @@ class RollingEnv:
     """
     Create scene and tacto simulator
     """
-
     # Initialize roller
     roller = tacto.Sensor(
       width=self.tactoResolution[0],
@@ -118,15 +102,12 @@ class RollingEnv:
       visualize_gui=self.visTacto,
       config_path='assets/sensors/roller.yml',
     )
-
     if self.visPyBullet:
       self.physicsClient = pb.connect(pb.GUI)
     else:
       self.physicsClient = pb.connect(pb.DIRECT)
-
     pb.setAdditionalSearchPath(pybullet_data.getDataPath())  # optionally
     pb.setGravity(0, 0, -9.81)  # Major Tom to planet Earth
-
     # Set camera view
     pb.resetDebugVisualizerCamera(
       cameraDistance=0.12,
@@ -134,9 +115,7 @@ class RollingEnv:
       cameraPitch=-20,
       cameraTargetPosition=[0, 0, 0.02],
     )
-
     pb.loadURDF("plane.urdf")  # Create plane
-
     rollerURDF = "assets/sensors/roller.urdf"
     # Set upper roller
     rollerPos1 = [0, 0, 0.011]
@@ -188,22 +167,36 @@ class RollingEnv:
     """
     Reset environment
     """
-
     pb.resetBasePositionAndOrientation(self.objId, self.objPos, self.objOrn)
     pb.resetBasePositionAndOrientation(
       self.rollerID2, self.rollerPos2, self.rollerOrn2
     )
-
-    xyz = [0, 0, 0.055]
-    pb.changeConstraint(self.cid, xyz, maxForce=5)
-
+    # reset xyz position of upper roller
+    self.xyz = [0, 0, self.grasp_z]
+    pb.changeConstraint(self.cid, self.xyz, maxForce=5)
     for i in range(10):
       pb.stepSimulation()
     self.roller.update()
-
     self.error = 0
-
-    self.logs = {"touch": [], "vision": [], "states": [], "goal": None}
+    self.logs = {"touch": [], "vision": [], "pos": [], "goal": None}
+    # reset goal
+    self.goal = np.random.uniform([-0.7, -0.7], [0.7, 0.7])
+  
+  def step(self, action):
+    pb.changeConstraint(self.cid, self.xyz, maxForce=5)
+    self.step_sim()
+    pos = self.pose_estimation(self.color[1], self.depth[1])
+    self.logs["pos"].append(pos)
+    self.xyz[:2] += action
+    rew = 0
+    for _ in range(self.skipFrame):
+      self.xyz[:2] += action
+      self.step_sim(render=False)
+      r = self.reward_fn(pos, self.goal, action, xyz=self.xyz)
+      rew += r
+    r = self.reward_fn(pos, self.goal, action, xyz=self.xyz)
+    rew += r
+    return {'pos':pos, 'goal': self.goal}, rew, False, {}
 
   def pose_estimation(self, color, depth):
     """
@@ -212,37 +205,14 @@ class RollingEnv:
     """
     ind = np.unravel_index(np.argmax(depth, axis=None), depth.shape)
     maxDepth = depth[ind]
-
     if maxDepth < 0.0005:
       return None
-
     center = np.array(
       [ind[0] / self.tactoResolution[1], ind[1] / self.tactoResolution[0]]
     )
-
     return center
 
-  def controller_Kx(self, state, goal, vel_last, K):
-    """
-    Args:
-        state: current ball location, range 0-1, e.g. np.array([0.5, 0.5])
-        goal: goal ball location, range 0-1, e.g. np.array([0.5, 0.5])
-        vel_last: previous velocity
-        K: control parameters
-
-    vel = K*(goal-state)^T
-    """
-    if state is None:
-      # return np.array([0.0, 0.0])
-      return vel_last
-
-    error = np.matrix(goal - state).T
-    vel = K.dot(error)
-    vel = np.array(vel).T[0]
-
-    return vel
-
-  def step(self, render=True):
+  def step_sim(self, render=True):
     """
     Step simulation, sync with tacto simulator
 
@@ -251,123 +221,31 @@ class RollingEnv:
     """
     # Step in pybullet
     pb.stepSimulation()
-
     if not (render):
       return
-
     st = time.time()
-    # Sync tacto
     self.roller.update()
-    # Render tactile imprints
     self.color, self.depth = self.roller.render()
-
-    self.time_render.append(time.time() - st)
-    self.time_render = self.time_render[-100:]
-    # print("render {:.4f}s".format(np.mean(self.time_render)), end=" ")
     st = time.time()
-
     if self.recordLogs:
       self.logs["touch"].append([self.color.copy(), self.depth])
-
       self.visionColor, self.visionDepth = self.cam.get_image()
       self.logs["vision"].append([self.visionColor, self.visionDepth])
-
     if self.visTacto:
       color1 = self.color[1].copy()
       x0 = int(self.goal[0] * self.tactoResolution[1])
       y0 = int(self.goal[1] * self.tactoResolution[0])
       color1[x0 - 4: x0 + 4, y0 - 4: y0 + 4, :] = [255, 255, 255]
-
-      # color1 = draw_circle(color1, self.goal)
       self.color[1] = color1
       self.roller.updateGUI(self.color, self.depth)
 
-    self.time_vis.append(time.time() - st)
-    self.time_vis = self.time_vis[-100:]
-
-    # print("visualize {:.4f}s".format(np.mean(self.time_vis)))
-
-  def save_logs(self, fn):
-    dd.io.save(fn, self.logs)
-
-  def cost_function(self, state, goal, vel, xyz=[0, 0, 0]):
-    if state is None:
-      distance = 1
-    else:
-      distance = np.sum((state - goal) ** 2) ** 0.5
-
-    cost_dist = distance
-
-    return cost_dist
-
-  def simulate(self, goal, K):
-    """
-    Simulate rolling ball to goal location with PD control, based on tactile signal
-        goal: goal ball location in tactile space, range 0-1, e.g. np.array([0.5, 0.5])
-        K: vel = K.dot(goal-state), e.g. np.array([[1,2],[3,4]])
-    """
-
-    # Main simulation loop
-    simulation_time = 31  # Duration simulation
-    self.goal = goal
-
-    self.time_render = []
-    self.time_vis = []
-
-    self.reset()
-    xyz = [0, 0, 0.055]
-    costs = 0.0
-    vel = [0, 0]
-
-    self.logs["goal"] = goal
-
-    for i in range(simulation_time):
-      pb.changeConstraint(self.cid, xyz, maxForce=5)
-
-      # position, orientation = self.roller.get_pose(self.objId, -1)
-
-      self.step()
-
-      state = self.pose_estimation(self.color[1], self.depth[1])
-      vel = self.controller_Kx(state, goal, vel, K)
-
-      self.logs["states"].append(state)
-
-      xyz[:2] += vel
-
-      for _ in range(self.skipFrame):
-        xyz[:2] += vel
-        self.step(render=False)
-
-        c = self.cost_function(state, goal, vel, xyz=xyz)
-        costs += c
-
-      c = self.cost_function(state, goal, vel, xyz=xyz)
-      costs += c
-
-    return costs
-
+  def reward_fn(self, state, goal, vel, xyz = None):
+    if xyz is None:
+      xyz = [0, 0, 0]
+    return 1 if state is None else np.sum((state - goal) ** 2) ** 0.5
 
 if __name__ == "__main__":
-  # env = RollingEnv(recordLogs=True, skipFrame=1, tactoResolution=[240, 320])
   env = RollingEnv(skipFrame=2)
-
-  goals = [
-    [0.3, 0.3],
-    [0.3, 0.5],
-    [0.3, 0.7],
-    [0.5, 0.3],
-    [0.5, 0.7],
-    [0.7, 0.3],
-    [0.7, 0.5],
-    [0.7, 0.7],
-  ]
-
-  # # iter 5
-  # K = np.array([-0.2931, 1.4576, -1.7034, -1.8010]) / 1000
-
-  # iter 30
-  K = np.array([-2.0000, 0.3131, -0.1268, -2.0000]) / 1000
-
-  for goal in goals:
-    rewards = env.simulate(goal, K.reshape(2, 2))
+  env.reset()
+  for _ in range(1000):
+    env.step(np.zeros(2))

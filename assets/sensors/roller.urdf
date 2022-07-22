@@ -9,8 +9,8 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <!-- <cylinder radius="0.015" length="0.03"/> -->
-        <mesh filename="cylinder.stl" scale="1.0"/>
+        <cylinder radius="0.015" length="0.03"/>
+        <!-- <mesh filename="cylinder.stl" scale="1.0"/> -->
       </geometry>
       <material name="white">
         <color rgba="1 1 1 1"/>
@@ -19,8 +19,8 @@
     <collision concave="yes">
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <!-- <cylinder radius="0.015" length="0.03"/> -->
-        <mesh filename="cylinder.stl" scale="1.0"/>
+        <cylinder radius="0.015" length="0.03"/>
+        <!-- <mesh filename="cylinder.stl" scale="1.0"/> -->
       </geometry>
     </collision>
   </link>

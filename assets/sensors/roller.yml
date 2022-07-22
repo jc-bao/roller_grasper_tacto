@@ -6,7 +6,7 @@ sensor:
   camera:
     - cam0:
       position: [0.00, 0, 0] # Camera position
-      orientation: [0, 0, 0] # Euler angles, "xyz", in degrees; e.g. [0, 0, 0]: towards negative z-axis; [90, 0, -90]: towards x-axis
+      orientation: [90, 0, -90] # Euler angles, "xyz", in degrees; e.g. [0, 0, 0]: towards negative z-axis; [90, 0, -90]: towards x-axis
       yfov: 70 # Vertical field of view in degrees
       znear: 0.001 # Distance to the near clipping plane, in meters
       lightIDList: [0, 1, 2, 3, 4, 5] # Select light ID list for rendering (OpenGL has max limit of 8 lights)
@@ -19,18 +19,20 @@ sensor:
     curvatureMax: 0.005  # Deformation of the gel due to convexity
     R: 0.015 # Radius of curved gel
     countW: 100 # Number of samples for horizontal direction; higher the finer details
-    mesh: "assets/sensors/cylinder.stl" # Mesh file for the gel
+    mesh: "assets/sensors/hollow_cylinder.stl" # Mesh file for the gel
 
   lights:
     # Light position & properties. 
     origin: [0, 0, 0] # center of the light plane, in meters
-    polar: True # True: apply polar coordinates; False: apply cartesian coordinates;    
+    polar: False # True: apply polar coordinates; False: apply cartesian coordinates;    
+    xyz: # cartesian coordinates
+      coords: [[0.000, 0.01, 0.008], [-0.0087, -0.005, 0.008], [0.0087, -0.005, 0.008], [0.000, 0.01, -0.008], [-0.0087, -0.005, -0.008], [0.0087, -0.005, -0.008]]
     xrtheta: # polar coordinates in y-z plane
-      xs: [0.015, 0.015, 0.015, 0.015, 0.015, 0.015] # x coordinate of the y-z plane
-      rs: [-0.015, -0.015, -0.015, 0.015, 0.015, 0.015] # r in polar coordinates
-      thetas: [0, 120, 240, 60, 180, 300] # theta in polar coordinates, in degrees
+      xs: [0.0013, 0.0013, 0.0013, 0.0013, 0.0013, 0.0013] # x coordinate of the y-z plane
+      rs: [-0.013, -0.013, -0.013, 0.013, 0.013, 0.013] # r in polar coordinates
+      thetas: [0, 120, 240, 300, 180, 60] # theta in polar coordinates, in degrees
     
-    colors: [[0, 0, 1], [0, 1, 0], [1, 0, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0]] # R G B color
+    colors: [[0, 0, 1], [0, 1, 0], [1, 0, 0], [1, 0, 0], [0, 0, 1], [0, 1, 0]] # R G B color
     intensities: [0.15, 0.15, 0.15, 0.15, 0.15, 0.15] # light intensity
 
   noise:

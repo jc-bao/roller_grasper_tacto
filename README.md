@@ -21,6 +21,7 @@ pip install scipyplot deepdish tacto
 ### L1
 
 - [ ] Replace Sensor with Roller
+- [ ] Handcrafted policy for reorientation
 
 ### L2
 
