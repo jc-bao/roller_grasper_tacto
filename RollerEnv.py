@@ -43,6 +43,7 @@ class Camera:
     dep = img_arr[3]  # depth data
     return rgb, dep
 
+
 def draw_circle(img, state):
   if state is None:
     return img
@@ -85,7 +86,7 @@ class RollingEnv(gym.Env):
     self.skipFrame = skipFrame
     # basic parameters
     self.error = 0
-    self.grasp_z = 0.055
+    self.grasp_distance = 0.04
     self.create_scene()
     self.cam = Camera(cameraResolution=[320, 240])
     self.logs = {"touch": [], "vision": [], "states": [], "goal": None}
@@ -117,9 +118,9 @@ class RollingEnv(gym.Env):
     )
     pb.loadURDF("plane.urdf")  # Create plane
     rollerURDF = "assets/sensors/roller.urdf"
-    # Set upper roller
-    rollerPos1 = [0, 0, 0.011]
-    rollerOrn1 = pb.getQuaternionFromEuler([0, -np.pi / 2, 0])
+    # Set left roller
+    rollerPos1 = [0.00, 0, 0.015]
+    rollerOrn1 = pb.getQuaternionFromEuler([0, 0, 0])
     rollerID1 = pb.loadURDF(
       rollerURDF,
       basePosition=rollerPos1,
@@ -128,20 +129,17 @@ class RollingEnv(gym.Env):
     )
     roller.add_camera(rollerID1, [-1])
 
-    # Set lower roller
-    rollerPos2 = [0, 0, 0.07]
-    rollerOrn2 = pb.getQuaternionFromEuler([0, np.pi / 2, np.pi])
+    # Set right roller
+    rollerPos2 = [0.05, 0, 0.015]
+    rollerOrn2 = pb.getQuaternionFromEuler([0, 0, np.pi])
     rollerID2 = pb.loadURDF(
       rollerURDF, basePosition=rollerPos2, baseOrientation=rollerOrn2,
     )
     roller.add_camera(rollerID2, [-1])
 
-    # Create object and GUI controls
-    init_xyz = np.array([0, 0.0, 8])
-
     # Add object to pybullet and tacto simulator
     urdfObj = "assets/objects/sphere_small.urdf"
-    objPos = np.array([-1.5, 0, 4]) / 100
+    objPos = np.array([0.015+0.005, 0, 0.015])
     objOrn = pb.getQuaternionFromEuler([0, 0, 0])
     globalScaling = 0.15
 
@@ -152,7 +150,7 @@ class RollingEnv(gym.Env):
     # Add constraint to movable roller (upper)
     cid = pb.createConstraint(
       rollerID2, -1, -1, -
-      1, pb.JOINT_FIXED, [0, 0, 0], [0, 0, 0], init_xyz / 100
+      1, pb.JOINT_FIXED, [0, 0, 0], [0, 0, 0], [0.05,0,0],
     )
 
     # Save variables
@@ -172,7 +170,7 @@ class RollingEnv(gym.Env):
       self.rollerID2, self.rollerPos2, self.rollerOrn2
     )
     # reset xyz position of upper roller
-    self.xyz = [0, 0, self.grasp_z]
+    self.xyz = [self.grasp_distance, 0, 0]
     pb.changeConstraint(self.cid, self.xyz, maxForce=5)
     for i in range(10):
       pb.stepSimulation()
@@ -181,7 +179,7 @@ class RollingEnv(gym.Env):
     self.logs = {"touch": [], "vision": [], "pos": [], "goal": None}
     # reset goal
     self.goal = np.random.uniform([-0.7, -0.7], [0.7, 0.7])
-  
+
   def step(self, action):
     pb.changeConstraint(self.cid, self.xyz, maxForce=5)
     self.step_sim()
@@ -196,7 +194,7 @@ class RollingEnv(gym.Env):
       rew += r
     r = self.reward_fn(pos, self.goal, action, xyz=self.xyz)
     rew += r
-    return {'pos':pos, 'goal': self.goal}, rew, False, {}
+    return {'pos': pos, 'goal': self.goal}, rew, False, {}
 
   def pose_estimation(self, color, depth):
     """
@@ -239,10 +237,11 @@ class RollingEnv(gym.Env):
       self.color[1] = color1
       self.roller.updateGUI(self.color, self.depth)
 
-  def reward_fn(self, state, goal, vel, xyz = None):
+  def reward_fn(self, state, goal, vel, xyz=None):
     if xyz is None:
       xyz = [0, 0, 0]
     return 1 if state is None else np.sum((state - goal) ** 2) ** 0.5
+
 
 if __name__ == "__main__":
   env = RollingEnv(skipFrame=2)
