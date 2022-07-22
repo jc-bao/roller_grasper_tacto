@@ -2,9 +2,9 @@
 <robot name="urdf_robot">
   <link name="base_link">
     <contact>
-      <rolling_friction value="0.01"/>
-      <spinning_friction value="0.01"/>
-      <lateral_friction value="5000"/>
+      <rolling_friction value="0.000"/>
+      <spinning_friction value="0.000"/>
+      <lateral_friction value="10000"/>
       <restitution value="0.1"/>
       <damping value="100" /> 
       <stiffness value="5000" />

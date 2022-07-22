@@ -126,11 +126,11 @@
 
 
   <link name="link4_left">
-    <!-- <contact>
-      <rolling_friction value="1"/>
-      <spinning_friction value="1"/>
+    <contact>
+      <rolling_friction value="0"/>
+      <spinning_friction value="0"/>
       <lateral_friction value="10"/>
-    </contact> -->
+    </contact>
     <inertial>
       <origin rpy="0 0 0" xyz="0 0 0.0" />
       <mass value="0.5" />
@@ -259,13 +259,11 @@
 
 
   <link name="link4_right">
-    <!-- <contact>
-      <rolling_friction value="0.1"/>
-      <spinning_friction value="0.1"/>
-      <rolling_friction value="1"/>
-      <spinning_friction value="1"/>
+    <contact>
+      <rolling_friction value="0"/>
+      <spinning_friction value="0"/>
       <lateral_friction value="10"/>
-    </contact> -->
+    </contact>
 
     <inertial>
       <origin rpy="0 0 0" xyz="0 0 0.0" />

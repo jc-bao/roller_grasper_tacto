@@ -4,6 +4,7 @@ import functools
 from omegaconf import OmegaConf
 import numpy as np
 import pybullet as p
+from sklearn.metrics import accuracy_score
 import tacto
 import pybulletX as px
 from pybulletX.utils.space_dict import SpaceDict
@@ -206,8 +207,8 @@ class RollerEnv(gym.Env):
       'roll_r_angle': 0,
     })
     self.robot = RollerGrapser(robot_params, init_state)
-    self.obj = px.Body(urdf_path='assets/objects/sphere_small.urdf', base_position=[0.000, 0, 0.13], global_scaling=0.7)
-    self.ghost_obj = px.Body(urdf_path='assets/objects/sphere_ghost.urdf', base_position=[0.000, 0, 0.18], global_scaling=0.7, use_fixed_base=True)
+    self.obj = px.Body(urdf_path='assets/objects/rounded_cube.urdf', base_position=[0.000, 0, 0.13+0.006], global_scaling=1)
+    self.ghost_obj = px.Body(urdf_path='assets/objects/rounded_cube_ghost.urdf', base_position=[0.000, 0, 0.18], global_scaling=1, use_fixed_base=True)
     self.sensor = tacto.Sensor(width=128, height=128, visualize_gui=True, config_path='assets/sensors/roller.yml')
     self.camera = Camera()
     self.viewer = None
@@ -255,14 +256,12 @@ class RollerEnv(gym.Env):
     self.robot.reset()
     # sample goal
     self.goal = unifrom_sample_quaternion()
-    self.goal = np.array([np.sin(np.pi/2),0,0, np.cos(np.pi/2)])
     self.ghost_obj.set_base_pose(self.ghost_obj.init_base_position, self.goal)
     # Move the object to random location
     dx, dy = np.random.randn(2) * 0.0
     x, y, z = self.obj.init_base_position
     position = [x + dx, y + dy, z]
     obj_orn = unifrom_sample_quaternion()
-    obj_orn = np.array([0,0,0,1])
     self.obj.set_base_pose(position, obj_orn)
     # get initial observation
     self.obs = self._get_obs()
@@ -296,17 +295,19 @@ class RollerEnv(gym.Env):
     # ===calculate action===
     action = env.action_space.sample()
     # print(local_omega, pitch)
-    action['wrist_vel'] = (local_omega[...,2] - local_omega[...,1] * np.tan(pitch))
-    action['pitch_l_vel'] = local_omega[..., 1]
-    action['pitch_r_vel'] = local_omega[..., 1]
-    action['roll_l_vel'] = local_omega[..., 0] / np.cos(pitch)
-    action['roll_r_vel'] = local_omega[..., 0] / np.cos(pitch)
+    action['wrist_vel'] = (local_omega[...,2] - local_omega[...,1] * np.tan(pitch))*0.0
+    action['pitch_l_vel'] = local_omega[..., 1]*0.0
+    action['pitch_r_vel'] = local_omega[..., 1]*0.0
+    action['roll_l_vel'] = local_omega[..., 0] / np.cos(pitch)*0.0
+    action['roll_r_vel'] = local_omega[..., 0] / np.cos(pitch)*0.0
+    action['pitch_l_vel'] = np.pi/2 - robot_joint['pitch_l_angle']
+    action['pitch_r_vel'] = np.pi/2 - robot_joint['pitch_r_angle']
     # compensate for the drop down
     roller_orn_local = R.from_euler('x', pitch)
     roller_orn = roller_orn_local * robot_orn.inv()
     obj_pos_local = roller_orn.apply(obj_pos)
-    action['roll_l_vel'] += obj_pos_local[..., 2] * 50
-    action['roll_r_vel'] -= obj_pos_local[..., 2] * 50
+    action['roll_l_vel'] += np.clip(obj_pos_local[..., 2] * 20, -1, 1)
+    action['roll_r_vel'] -= np.clip(obj_pos_local[..., 2] * 20, -1, 1)
     return action
 
 
@@ -342,9 +343,13 @@ if __name__ == '__main__':
   env = RollerEnv()
   obs = env.reset()
   for _ in range(1000):
-    # act = env.ezpolicy(obs)
-    act = env.action_space.new()
-    print(act)
+    act = env.ezpolicy(obs)
+    # act = env.action_space.new()
+    # act['wrist_vel'] = 0
+    # act['pitch_l_vel'] = 1.
+    # act['pitch_r_vel'] = 1.
+    # act['roll_l_vel'] = 0.
+    # act['roll_r_vel'] = 0.
     obs, rew, done, info = env.step(act)
-    if done:
-      obs = env.reset()
+    # if done:
+    #   obs = env.reset()
