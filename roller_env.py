@@ -296,7 +296,7 @@ class RollerEnv(gym.Env):
     # ===calculate action===
     action = env.action_space.sample()
     # print(local_omega, pitch)
-    action['wrist_vel'] = (local_omega[...,2] - local_omega[...,1] * np.tan(pitch))*0
+    action['wrist_vel'] = (local_omega[...,2] - local_omega[...,1] * np.tan(pitch))
     action['pitch_l_vel'] = local_omega[..., 1]
     action['pitch_r_vel'] = local_omega[..., 1]
     action['roll_l_vel'] = local_omega[..., 0] / np.cos(pitch)
@@ -342,7 +342,9 @@ if __name__ == '__main__':
   env = RollerEnv()
   obs = env.reset()
   for _ in range(1000):
-    act = env.ezpolicy(obs)
+    # act = env.ezpolicy(obs)
+    act = env.action_space.new()
+    print(act)
     obs, rew, done, info = env.step(act)
     if done:
       obs = env.reset()
