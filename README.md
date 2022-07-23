@@ -15,9 +15,9 @@ Based on PyBullet and Tacto.
 
 ## Handcrafted Policy
 
-|Rolling Action| Pitching Action|Wrist Action|
-|-|-|-|
-|![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4gh2dz1gmg20cu06ktfj.gif)|![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4gh2jye7eg20cu06kn47.gif)|![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4gh2psptpg20cu06kgul.gif)|
+|Rolling Action| Pitching Action|Wrist Action|Compositional Action|
+|-|-|-|-|
+|![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4gh2dz1gmg20cu06ktfj.gif)|![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4gh2jye7eg20cu06kn47.gif)|![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4gh2psptpg20cu06kgul.gif)|![success-2](https://user-images.githubusercontent.com/60093981/180583278-77c65ff9-ca5c-4ef9-bf88-71f931f4488e.gif)|
 
 
 ## Usage
