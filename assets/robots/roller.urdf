@@ -157,10 +157,22 @@
 
   <link name="link5_left">
     <inertial>
-      <origin rpy="0 0 0" xyz="0 0 0.03" />
+      <origin rpy="0 0 1.57" xyz="0 0 0.03" />
       <mass value="0.05" />
       <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001" />
     </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0.0" />
+      <geometry>
+        <cylinder radius="0.02" length="0.05" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0.0" />
+      <geometry>
+        <cylinder radius="0.018" length="0.05" />
+      </geometry>
+    </collision>
   </link>
 
 
@@ -278,7 +290,7 @@
         <cylinder radius="0.02" length="0.05" />
       </geometry>
     </visual>
-
+    
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0.0" />
       <geometry>
@@ -286,15 +298,27 @@
         <cylinder radius="0.02" length="0.05" />
       </geometry>
     </collision>
-
+    
   </link>
-
+  
   <link name="link5_right">
     <inertial>
-      <origin rpy="0 0 0" xyz="0 0 0.03" />
+      <origin rpy="0 0 -1.57" xyz="0 0 0.03" />
       <mass value="0.05" />
       <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001" />
     </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0.0" />
+      <geometry>
+        <cylinder radius="0.02" length="0.05" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0.0" />
+      <geometry>
+        <cylinder radius="0.018" length="0.05" />
+      </geometry>
+    </collision>
   </link>
 
   <joint name="wrist" type="revolute">
@@ -389,7 +413,7 @@
   </joint>
 
   <joint name="joint5_right" type="fixed">
-    <origin xyz="0.0 0.0368 0.0" rpy="0 1.57 0" />
+    <origin xyz="0.0 -0.0368 0.0" rpy="0 1.57 0" />
     <parent link="link3_right" />
     <child link="link5_right" />
     <axis xyz="0 0 1" />

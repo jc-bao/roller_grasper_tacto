@@ -4,9 +4,9 @@ Based on PyBullet and Tacto.
 
 ## Environment
 
-|Roller Toy Environment| Roller Env (Random explore)||
+|Roller Toy Environment| Roller Env (Random explore)|Render gelsight environment|
 |-|-|-|
-|![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4g69amxucj20jo0gs3z1.jpg)|![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4g94hyxngg20cw0ac4qq.gif)||
+|![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4g69amxucj20jo0gs3z1.jpg)|![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4g94hyxngg20cw0ac4qq.gif)|![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4gsdv7h0hg20ee08uavr.gif)|
 
 |Rolling Action| Pitching Action|Wrist Action|
 |-|-|-|
@@ -49,7 +49,8 @@ pip install scipyplot deepdish tacto
 - [x] Gym Wrapper (2022.07.21)
 - [ ] Roller Control Suite
   - [x] Add roller model to simulation (2022.7.22)
-  - [ ] Add sensor to simulation
+  - [ ] Add sensor to simulation (2022.7.22)
+- [ ] off screen rendering
 
 ### L3
 

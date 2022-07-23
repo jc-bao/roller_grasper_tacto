@@ -1,15 +1,12 @@
 import copy
 import logging
 import functools
-from omegaconf import OmegaConf
 import numpy as np
 import pybullet as p
-from sklearn.metrics import accuracy_score
 import tacto
 import pybulletX as px
 from pybulletX.utils.space_dict import SpaceDict
 from attrdict import AttrMap
-import cv2
 import gym
 from gym import spaces
 from gym.envs.registration import register
@@ -18,6 +15,7 @@ from scipy.spatial.transform import Rotation as R
 from utils import Camera, convert_obs_to_obs_space, unifrom_sample_quaternion
 
 log = logging.getLogger(__name__)
+
 
 class RollerGrapser(px.Robot):
   wrist_vel = 1
@@ -109,7 +107,7 @@ class RollerGrapser(px.Robot):
 
     states = self.state_space.new()
     # TODO convert to euler
-    states.wrist_angle = wrist_joint.joint_position 
+    states.wrist_angle = wrist_joint.joint_position
     states.finger_l = finger_l.joint_position
     states.finger_r = finger_r.joint_position
     states.pitch_l_angle = pitch_l.joint_position
@@ -134,15 +132,15 @@ class RollerGrapser(px.Robot):
     states = self.get_states()
     # action is the desired state, overwrite states with actions to get it
     states.wrist_angle += (actions.wrist_vel * self.wrist_vel)
-    states.finger_l = -0.01
-    states.finger_r = 0.01
+    states.finger_l = 0.00
+    states.finger_r = 0.00
     states.pitch_l_angle += (actions.pitch_l_vel * self.pitch_vel)
     states.pitch_r_angle += (actions.pitch_r_vel * self.pitch_vel)
     states.roll_l_angle += (actions.roll_l_vel * self.roll_vel)
     states.roll_r_angle += (actions.roll_r_vel * self.roll_vel)
     joint_position = self._states_to_joint_position(states)
     max_forces = np.ones(self.num_dofs) * self.MAX_FORCES
-    max_forces[self.gripper_joint_ids] *= 1 
+    max_forces[self.gripper_joint_ids] *= 1
     max_forces[self.pitch_joint_ids] *= 100
     max_forces[self.roll_joint_ids] *= 100
     self.set_joint_position(
@@ -207,9 +205,12 @@ class RollerEnv(gym.Env):
       'roll_r_angle': 0,
     })
     self.robot = RollerGrapser(robot_params, init_state)
-    self.obj = px.Body(urdf_path='assets/objects/rounded_cube.urdf', base_position=[0.000, 0, 0.13+0.006], global_scaling=1)
-    self.ghost_obj = px.Body(urdf_path='assets/objects/rounded_cube_ghost.urdf', base_position=[0.000, 0, 0.18], global_scaling=1, use_fixed_base=True)
-    self.sensor = tacto.Sensor(width=128, height=128, visualize_gui=True, config_path='assets/sensors/roller.yml')
+    self.obj = px.Body(urdf_path='assets/objects/rounded_cube.urdf',
+                       base_position=[0.000, 0, 0.13], global_scaling=1)
+    self.ghost_obj = px.Body(urdf_path='assets/objects/rounded_cube_ghost.urdf',
+                             base_position=[0.000, 0, 0.18], global_scaling=1, use_fixed_base=True)
+    self.sensor = tacto.Sensor(
+      width=128, height=128, visualize_gui=True, config_path='assets/sensors/roller.yml')
     self.camera = Camera()
     self.viewer = None
     self.sensor.add_camera(self.robot.id, self.robot.digit_links)
@@ -271,9 +272,11 @@ class RollerEnv(gym.Env):
     def _to_uint8(depth):
       min_, max_ = depth.min(), depth.max()
       return ((depth - min_) / (max_ - min_) * 255).astype(np.uint8)
-    img = np.concatenate([digit.depth for digit in self.obs.sensor], axis=1)
-    cv2.imshow("img", img)
-    cv2.waitKey(1)
+    # color = np.concatenate([digit.color for digit in self.obs.sensor], axis=1)
+    # depth = np.concatenate([digit.depth for digit in self.obs.sensor], axis=1)
+    color = [digit.color for digit in self.obs.sensor]
+    depth = [digit.depth for digit in self.obs.sensor]
+    self.sensor.updateGUI(color, depth)
 
   def ezpolicy(self, obs):
     # ===parse observation===
@@ -283,25 +286,32 @@ class RollerEnv(gym.Env):
     robot_orn = R.from_euler('z', robot_joint['wrist_angle'])
     pitch = robot_joint['pitch_l_angle'] % (2 * np.pi)
     obj_pos = obs['object']['position']
-    obj_pos[...,2] -= 0.13
+    obj_pos[..., 2] -= 0.13
     # ===calculate angular velocity===
     diff_orn = goal_orn * obj_orn.inv()
-    omega = 0.5 * 2 * ((diff_orn).as_quat())[...,:3]
-    omega *= ((diff_orn.as_quat()[..., 3] > 0) *2 - 1)
-    local_omega = robot_orn.apply(omega) * 4
+    omega = 0.5 * 2 * ((diff_orn).as_quat())[..., :3]
+    omega *= ((diff_orn.as_quat()[..., 3] > 0) * 2 - 1)
+    local_omega = robot_orn.apply(omega) * 10
     local_omega_norm = np.linalg.norm(local_omega)
     if local_omega_norm > 1:
-      local_omega /= local_omega_norm 
+      local_omega /= local_omega_norm
     # ===calculate action===
-    action = env.action_space.sample()
-    # print(local_omega, pitch)
-    action['wrist_vel'] = (local_omega[...,2] - local_omega[...,1] * np.tan(pitch))*0.0
-    action['pitch_l_vel'] = local_omega[..., 1]*0.0
-    action['pitch_r_vel'] = local_omega[..., 1]*0.0
-    action['roll_l_vel'] = local_omega[..., 0] / np.cos(pitch)*0.0
-    action['roll_r_vel'] = local_omega[..., 0] / np.cos(pitch)*0.0
-    action['pitch_l_vel'] = np.pi/2 - robot_joint['pitch_l_angle']
-    action['pitch_r_vel'] = np.pi/2 - robot_joint['pitch_r_angle']
+    action = env.action_space.new()
+    if abs(abs(pitch) - np.pi/2) < 1:
+      action['wrist_vel'] = 1
+      action['pitch_l_vel'] = 0
+      action['pitch_r_vel'] = 0
+      action['roll_l_vel'] = 0
+      action['roll_r_vel'] = 0
+    else:
+      action['wrist_vel'] = (local_omega[..., 2] -
+                             local_omega[..., 1] * np.tan(pitch))*0.4
+      action['pitch_l_vel'] = local_omega[..., 1]
+      action['pitch_r_vel'] = local_omega[..., 1]
+      action['roll_l_vel'] = local_omega[..., 0] / np.cos(pitch)
+      action['roll_r_vel'] = local_omega[..., 0] / np.cos(pitch)
+    # action['pitch_l_vel'] = np.pi/2 - robot_joint['pitch_l_angle']
+    # action['pitch_r_vel'] = np.pi/2 - robot_joint['pitch_r_angle']
     # compensate for the drop down
     roller_orn_local = R.from_euler('x', pitch)
     roller_orn = roller_orn_local * robot_orn.inv()
@@ -309,7 +319,6 @@ class RollerEnv(gym.Env):
     action['roll_l_vel'] += np.clip(obj_pos_local[..., 2] * 20, -1, 1)
     action['roll_r_vel'] -= np.clip(obj_pos_local[..., 2] * 20, -1, 1)
     return action
-
 
   def close(self):
     pass
@@ -335,6 +344,7 @@ class RollerEnv(gym.Env):
   def action_space(self):
     return copy.deepcopy(self.robot.action_space)
 
+
 register(
   id="roller-v0", entry_point="roller_env:RollerEnv",
 )
@@ -345,11 +355,12 @@ if __name__ == '__main__':
   for _ in range(1000):
     # act = env.ezpolicy(obs)
     act = env.action_space.new()
-    act['wrist_vel'] = 0
-    act['pitch_l_vel'] = 1.
-    act['pitch_r_vel'] = 1.
-    act['roll_l_vel'] = 0.
-    act['roll_r_vel'] = 0.
+    act['wrist_vel'] = 0.
+    act['pitch_l_vel'] = 0.
+    act['pitch_r_vel'] = 0.
+    act['roll_l_vel'] = 1.
+    act['roll_r_vel'] = 1.
     obs, rew, done, info = env.step(act)
-    # if done:
-    #   obs = env.reset()
+    env.render()
+    if done:
+      obs = env.reset()
