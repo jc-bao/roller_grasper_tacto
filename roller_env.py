@@ -291,27 +291,26 @@ class RollerEnv(gym.Env):
     diff_orn = goal_orn * obj_orn.inv()
     omega = 0.5 * 2 * ((diff_orn).as_quat())[..., :3]
     omega *= ((diff_orn.as_quat()[..., 3] > 0) * 2 - 1)
-    local_omega = robot_orn.apply(omega) * 10
-    local_omega_norm = np.linalg.norm(local_omega)
-    if local_omega_norm > 1:
-      local_omega /= local_omega_norm
+    local_omega = robot_orn.apply(omega)
+    print(diff_orn.as_quat())
+    # local_omega_norm = np.linalg.norm(local_omega)
+    # if local_omega_norm > 2:
+    #   local_omega /= local_omega_norm
     # ===calculate action===
+    err = 0.2
+    delta = abs(abs(pitch-np.pi) - np.pi/2)
     action = env.action_space.new()
-    if abs(abs(pitch) - np.pi/2) < 1:
-      action['wrist_vel'] = 1
-      action['pitch_l_vel'] = 0
-      action['pitch_r_vel'] = 0
-      action['roll_l_vel'] = 0
-      action['roll_r_vel'] = 0
+    if abs(local_omega[1]) < 0.05 and delta < err:
+      action['wrist_vel'] = np.clip(local_omega[..., 2], -1, 1)
     else:
-      action['wrist_vel'] = (local_omega[..., 2] -
-                             local_omega[..., 1] * np.tan(pitch))*0.4
-      action['pitch_l_vel'] = local_omega[..., 1]
-      action['pitch_r_vel'] = local_omega[..., 1]
-      action['roll_l_vel'] = local_omega[..., 0] / np.cos(pitch)
-      action['roll_r_vel'] = local_omega[..., 0] / np.cos(pitch)
-    # action['pitch_l_vel'] = np.pi/2 - robot_joint['pitch_l_angle']
-    # action['pitch_r_vel'] = np.pi/2 - robot_joint['pitch_r_angle']
+      action['wrist_vel'] = np.clip(local_omega[..., 2] -
+                              local_omega[..., 1] * np.tan(pitch), -1, 1)
+    if delta < err:
+      action['wrist_vel'] *= delta/err
+    action['pitch_l_vel'] = np.clip(local_omega[..., 1], -1, 1)
+    action['pitch_r_vel'] = np.clip(local_omega[..., 1], -1, 1)
+    action['roll_l_vel'] = np.clip(local_omega[..., 0] / np.cos(pitch), -1, 1)
+    action['roll_r_vel'] = np.clip(local_omega[..., 0] / np.cos(pitch), -1, 1)
     # compensate for the drop down
     roller_orn_local = R.from_euler('x', pitch)
     roller_orn = roller_orn_local * robot_orn.inv()
@@ -353,13 +352,13 @@ if __name__ == '__main__':
   env = RollerEnv()
   obs = env.reset()
   for _ in range(1000):
-    # act = env.ezpolicy(obs)
-    act = env.action_space.new()
-    act['wrist_vel'] = 0.
-    act['pitch_l_vel'] = 0.
-    act['pitch_r_vel'] = 0.
-    act['roll_l_vel'] = 1.
-    act['roll_r_vel'] = 1.
+    act = env.ezpolicy(obs)
+    # act = env.action_space.new()
+    # act['wrist_vel'] = 0.
+    # act['pitch_l_vel'] = 0.
+    # act['pitch_r_vel'] = 0.
+    # act['roll_l_vel'] = 1.
+    # act['roll_r_vel'] = 1.
     obs, rew, done, info = env.step(act)
     env.render()
     if done:
