@@ -193,6 +193,9 @@ class RollerEnv(gym.Env):
     # p.resetDebugVisualizerCamera(
     #   cameraDistance=0.2, cameraYaw=90, cameraPitch=-20, cameraTargetPosition=[0.0, 0, 0.1])
     # p.setRealTimeSimulation(False)
+    # render parameters
+    self.window_x, self.window_y = 1024, 512
+    self.sensor_x, self.sensor_y = 256, 256
     robot_params = {
       'urdf_path': 'assets/robots/roller.urdf',
       'use_fixed_base': True,
@@ -216,7 +219,7 @@ class RollerEnv(gym.Env):
     self.ghost_obj = px.Body(urdf_path='assets/objects/rounded_cube_ghost.urdf',
                              base_position=[0.000, 0, 0.18], global_scaling=1, use_fixed_base=True)
     self.sensor = tacto.Sensor(
-      width=128, height=192, visualize_gui=False, config_path='assets/sensors/roller.yml')
+      width=self.sensor_x, height=self.sensor_y, visualize_gui=False, config_path='assets/sensors/roller.yml')
     self.camera = Camera()
     self.viewer = None
     self.sensor.add_camera(self.robot.id, self.robot.digit_links)
@@ -283,8 +286,8 @@ class RollerEnv(gym.Env):
       self.sensor.updateGUI(color, depth)
     elif mode == "rgb_array":
       # frame data
-      width = 1024
-      height = 512
+      self.window_x = 1024
+      self.window_y = 512
       view_matrix = p.computeViewMatrixFromYawPitchRoll(
         cameraTargetPosition=[0, 0, 0.1],
         distance=0.2,
@@ -293,10 +296,10 @@ class RollerEnv(gym.Env):
         roll=0,
         upAxisIndex=2)
       proj_matrix = p.computeProjectionMatrixFOV(
-        fov=60, aspect=float(width)/height,
+        fov=60, aspect=float(self.window_x)/self.window_y,
         nearVal=0.1, farVal=100.0)
       (_, _, px, _, _) = p.getCameraImage(
-        width=width, height=height, viewMatrix=view_matrix,
+        width=self.window_x, height=self.window_y, viewMatrix=view_matrix,
         projectionMatrix=proj_matrix,
         renderer=p.ER_BULLET_HARDWARE_OPENGL
       )
@@ -310,8 +313,6 @@ class RollerEnv(gym.Env):
         rgb_array[shape_x*i:shape_x*(i+1), :shape_y, :] = color
         rgb_array[shape_x*i:shape_x*(i+1), shape_y:shape_y*2, :] = np.expand_dims(depth*256, 2).repeat(3, axis=2)
       # depth data
-      depth_x = 256
-      depth_y = 256
       view_matrix = p.computeViewMatrixFromYawPitchRoll(
         cameraTargetPosition=self.obj_copy.init_base_position,
         distance=0.05,
@@ -320,14 +321,14 @@ class RollerEnv(gym.Env):
         roll=0,
         upAxisIndex=2)
       proj_matrix = p.computeProjectionMatrixFOV(
-        fov=90, aspect=float(depth_x)/depth_y,
+        fov=90, aspect=float(self.sensor_x)/self.sensor_y,
         nearVal=0.01, farVal=0.08)
       width, height, rgbImg, depthImg, segImg = p.getCameraImage(
-        width=depth_x, height=depth_y, viewMatrix=view_matrix,
+        width=self.sensor_x, height=self.sensor_y, viewMatrix=view_matrix,
         projectionMatrix=proj_matrix,
         renderer=p.ER_BULLET_HARDWARE_OPENGL
       )
-      rgb_array[:depth_y, -depth_x:, :] = np.expand_dims(depthImg*256, 2).repeat(3, axis=2)
+      rgb_array[:self.sensor_y, -self.sensor_x:, :] = np.expand_dims(depthImg*256, 2).repeat(3, axis=2)
       return rgb_array
 
   def ezpolicy(self, obs):

@@ -45,6 +45,8 @@ pip install scipyplot deepdish tacto
   - [ ] Compositonal handcrafted policy
 - [ ] Reconstruct the object from depth image
   - [ ] With wide camera range
+    - [ ] With true object position
+    - [ ] With position esitimate from roller angle
   - [ ] With small camera range
   - [ ] With moving camera
 - [ ] Reconstruct the object from tactile sensor
