@@ -1,4 +1,5 @@
 import copy
+import enum
 import logging
 import functools
 import numpy as np
@@ -17,7 +18,7 @@ from PIL import Image
 import open3d as o3d
 from scipy.spatial.transform import Rotation as R
 
-from utils import Camera, convert_obs_to_obs_space, unifrom_sample_quaternion, char_to_pixels
+from utils import Camera, convert_obs_to_obs_space, unifrom_sample_quaternion, char_to_pixels, pairwise_registration
 
 log = logging.getLogger(__name__)
 
@@ -204,6 +205,13 @@ class RollerEnv(gym.Env):
     self.pinhole_camera_intrinsic = o3d.camera.PinholeCameraIntrinsic(self.sensor_x, self.sensor_y, max(
       self.sensor_y, self.sensor_x)/2, max(self.sensor_y, self.sensor_x)/2, self.sensor_x/2, self.sensor_y/2)
 
+    # SLAM params
+    self.matching_num = 5
+    self.voxel_size = 0.0001
+    self.fit_bar = 0.01 # fitness bar to conduct graph optimization
+    self.max_correspondence_distance_coarse = self.voxel_size * 15
+    self.max_correspondence_distance_fine = self.voxel_size * 1.5
+
     # create o3d render window
     self.o3dvis = o3d.visualization.Visualizer()
     self.o3dvis.create_window(
@@ -250,7 +258,7 @@ class RollerEnv(gym.Env):
     info = {}
     self.robot.set_actions(action)
     self.obj_copy.set_base_pose(
-      self.obj_copy.init_base_position-self.obj.init_base_position + self.obj.get_base_pose()[0], self.obj.get_base_pose()[1])
+      np.asarray(self.obj_copy.init_base_position)-np.asarray(self.obj.init_base_position )+ np.asarray(self.obj.get_base_pose()[0]), self.obj.get_base_pose()[1])
     p.stepSimulation()
     self.obs = self._get_obs()
     return self.obs, reward, done, info
@@ -282,6 +290,7 @@ class RollerEnv(gym.Env):
 
   def reset(self):
     self.steps = 0
+    self.closed_loop = False
     self.robot.reset()
     # sample goal
     self.goal = unifrom_sample_quaternion()
@@ -295,6 +304,11 @@ class RollerEnv(gym.Env):
     self.obj.set_base_pose(position, obj_orn)
     # get initial observation
     self.obs = self._get_obs()
+    self.pcd_right, self.pcd_left, self.pcds= [], [], []
+    # setup pose graph
+    self.pose_graph = o3d.pipelines.registration.PoseGraph()
+    self.odometry = np.identity(4)
+    self.pose_graph.nodes.append(o3d.pipelines.registration.PoseGraphNode(self.odometry))
     return self.obs
 
   def render(self, mode="human"):
@@ -303,6 +317,8 @@ class RollerEnv(gym.Env):
       depth = [digit.depth for digit in self.obs.sensor]
       self.sensor.updateGUI(color, depth)
     elif mode == "rgb_array":
+      rgb_array = np.ones((1024, 1024, 3), dtype=np.uint8)
+
       # frame data
       self.window_x = 1024
       self.window_y = 512
@@ -321,8 +337,8 @@ class RollerEnv(gym.Env):
         projectionMatrix=proj_matrix,
         renderer=p.ER_BULLET_HARDWARE_OPENGL
       )
-      rgb_array = np.array(px)
-      rgb_array = rgb_array[:, :, :3]
+      rgb_array[:self.window_y, :self.window_x,:] = np.array(px)[..., :3]
+
       # sensor data
       for i in range(len(self.obs.sensor)):
         color = self.obs.sensor[i].color
@@ -333,89 +349,202 @@ class RollerEnv(gym.Env):
                   :] = np.expand_dims(depth*256, 2).repeat(3, axis=2)
         txt = char_to_pixels(f'GEL{i+1}')
         rgb_array[shape_x*i:shape_x*i+16, :64, :] = txt
-      # depth data
-      view_matrix = p.computeViewMatrixFromYawPitchRoll(
-        cameraTargetPosition=self.obj_copy.init_base_position,
-        distance=self.depth_cam_distance,
-        yaw=180,
-        pitch=0,
-        roll=0,
-        upAxisIndex=2)
-      proj_matrix = p.computeProjectionMatrixFOV(
-        fov=90, aspect=float(self.sensor_x)/self.sensor_y,
-        nearVal=self.sensor_near, farVal=self.sensor_far)
-      width, height, rgbImg, depthImg, segImg = p.getCameraImage(
-        width=self.sensor_x, height=self.sensor_y, viewMatrix=view_matrix,
-        projectionMatrix=proj_matrix,
-        renderer=p.ER_BULLET_HARDWARE_OPENGL
-      )
-      rgb_array[:self.sensor_y, -self.sensor_x:,
-                :] = np.expand_dims(depthImg*256, 2).repeat(3, axis=2)
-      txt = char_to_pixels('depth1')
-      rgb_array[:16, -self.sensor_x:-self.sensor_x+64, :] = txt
-      # point cloud data
-      rgbImg = Image.fromarray(rgbImg, mode='RGBA').convert('RGB')
-      color = o3d.geometry.Image(np.array(rgbImg))
-      depth = self.sensor_far * self.sensor_near / \
-        (self.sensor_far - (self.sensor_far - self.sensor_near) * depthImg)
-      depthImg = depth/self.sensor_far
-      depthImg[depthImg > 0.98] = 0
-      depth = o3d.geometry.Image((depthImg*255).astype(np.uint8))
-      rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
-        color, depth, depth_scale=1/self.sensor_far, depth_trunc=1000, convert_rgb_to_intensity=False)
-      pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
-        rgbd, self.pinhole_camera_intrinsic)
-      
-      cam2worldTrans = np.array([
-        [-1, 0, 0, 0],
-        [0, 0, -1, self.depth_cam_distance],
-        [0, -1, 0, 0],
-        [0, 0, 0, 1]])
-      world2camTrans = np.linalg.inv(cam2worldTrans)
+        
+      pcd_combined = o3d.geometry.PointCloud()
+      for cam_id in range(1,3):
+        y_start, x_start = self.sensor_y*cam_id, 0
+        # depth data
+        view_matrix = p.computeViewMatrixFromYawPitchRoll(
+          cameraTargetPosition=self.obj_copy.init_base_position,
+          distance=self.depth_cam_distance,
+          yaw=180*cam_id,
+          pitch=0,
+          roll=0,
+          upAxisIndex=2)
+        proj_matrix = p.computeProjectionMatrixFOV(
+          fov=90, aspect=float(self.sensor_x)/self.sensor_y,
+          nearVal=self.sensor_near, farVal=self.sensor_far)
+        width, height, rgbImg, depthImg, segImg = p.getCameraImage(
+          width=self.sensor_x, height=self.sensor_y, viewMatrix=view_matrix,
+          projectionMatrix=proj_matrix,
+          renderer=p.ER_BULLET_HARDWARE_OPENGL
+        )
+        rgb_array[y_start:y_start+self.sensor_y, x_start:x_start+self.sensor_x,:] = np.expand_dims(depthImg*256, 2).repeat(3, axis=2)
+        txt = char_to_pixels(f'depth{cam_id}')
+        rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
+        x_start += self.sensor_x
 
-      # draw point cloud in camera frame
-      self.o3dvis.add_geometry(pcd)
-      self.o3dvis.add_geometry(copy.deepcopy(self.world_frame).transform(world2camTrans))
-      self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
-      self.o3dvis.get_view_control().set_front(np.array([0, 0, -1]))
-      self.o3dvis.get_view_control().set_up(np.array([0, -1, 0]))
-      color = self.o3dvis.capture_screen_float_buffer(do_render=True)
-      rgb_array[-self.sensor_y:, :self.sensor_x, :] = np.asarray(color)*256
-      txt = char_to_pixels('PC1 in cam')
-      rgb_array[-16:, :64, :] = txt
-      self.o3dvis.clear_geometries()
+        # point cloud data
+        rgbImg = Image.fromarray(rgbImg, mode='RGBA').convert('RGB')
+        color = o3d.geometry.Image(np.array(rgbImg))
+        depth = self.sensor_far * self.sensor_near / \
+          (self.sensor_far - (self.sensor_far - self.sensor_near) * depthImg)
+        depthImg = depth/self.sensor_far
+        depthImg[depthImg > 0.98] = 0
+        depth = o3d.geometry.Image((depthImg*255).astype(np.uint8))
+        rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
+          color, depth, depth_scale=1/self.sensor_far, depth_trunc=1000, convert_rgb_to_intensity=False)
+        pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
+          rgbd, self.pinhole_camera_intrinsic)
 
-      # draw point cloud in world frame
-      self.o3dvis.add_geometry(self.world_frame)
-      pcd.transform(cam2worldTrans)
-      self.o3dvis.add_geometry(pcd)
-      self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
-      self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
-      self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
-      color = self.o3dvis.capture_screen_float_buffer(do_render=True)
-      rgb_array[-self.sensor_y:, self.sensor_x:self.sensor_x*2, :] = np.asarray(color)*256
-      txt = char_to_pixels('PC1 in world')
-      rgb_array[-16:, self.sensor_x:self.sensor_x+64, :] = txt
-      self.o3dvis.clear_geometries()
+        # transformation information
+        if cam_id == 2:
+          cam2worldTrans = np.array([
+            [1, 0, 0, 0],
+            [0, 0, 1, -self.depth_cam_distance],
+            [0, -1, 0, 0],
+            [0, 0, 0, 1]])
+        elif cam_id == 1:
+          cam2worldTrans = np.array([
+            [-1, 0, 0, 0],
+            [0, 0, -1, self.depth_cam_distance],
+            [0, -1, 0, 0],
+            [0, 0, 0, 1]])
+        else:
+          raise NotImplementedError
+        world2camTrans = np.linalg.inv(cam2worldTrans)
+        obj2worldTrans = np.zeros((4,4))
+        obj2worldTrans[:3,:3] = R.from_quat(self.obj_copy.get_base_pose()[1]).as_matrix()
+        obj2worldTrans[:3,3] = (np.asarray(self.obj_copy.get_base_pose()[0]) - np.asarray(self.obj_copy.init_base_position))
+        obj2worldTrans[3,3] = 1
+        world2objTrans = np.linalg.inv(obj2worldTrans)
 
-      # draw object in object frame (for reconstruction)
-      obj2worldTrans = np.zeros((4,4))
-      obj2worldTrans[:3,:3] = R.from_quat(self.obj_copy.get_base_pose()[1]).as_matrix()
-      obj2worldTrans[:3,3] = (self.obj_copy.get_base_pose()[0] - self.obj_copy.init_base_position)
-      obj2worldTrans[3,3] = 1
-      world2objTrans = np.linalg.inv(obj2worldTrans)
-      pcd.transform(world2objTrans)
-      self.o3dvis.add_geometry(pcd)
+        # draw point cloud in camera frame
+        self.o3dvis.add_geometry(pcd)
+        self.o3dvis.add_geometry(copy.deepcopy(self.world_frame).transform(world2camTrans))
+        self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
+        self.o3dvis.get_view_control().set_front(np.array([0, 0, -1]))
+        self.o3dvis.get_view_control().set_up(np.array([0, -1, 0]))
+        color = self.o3dvis.capture_screen_float_buffer(do_render=True)
+        rgb_array[y_start:y_start+self.sensor_y, x_start:x_start+self.sensor_x,:] = np.asarray(color)*256
+        txt = char_to_pixels(f'PC{cam_id} in cam')
+        rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
+        self.o3dvis.clear_geometries()
+        x_start += self.sensor_x
+
+        # draw point cloud in world frame
+        self.o3dvis.add_geometry(self.world_frame)
+        pcd.transform(cam2worldTrans)
+        self.o3dvis.add_geometry(pcd)
+        self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
+        self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
+        self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
+        color = self.o3dvis.capture_screen_float_buffer(do_render=True)
+        rgb_array[y_start:y_start+self.sensor_y, x_start:x_start+self.sensor_x,:] = np.asarray(color)*256
+        txt = char_to_pixels(f'PC{cam_id} in world')
+        rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
+        self.o3dvis.clear_geometries()
+        x_start += self.sensor_x
+
+        # draw object in object frame (for reconstruction)
+        pcd.transform(world2objTrans)
+        self.o3dvis.add_geometry(pcd)
+        self.o3dvis.add_geometry(copy.deepcopy(self.world_frame).transform(world2objTrans))
+        self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
+        self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
+        self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
+        color = self.o3dvis.capture_screen_float_buffer(do_render=True)
+        rgb_array[y_start:y_start+self.sensor_y, x_start:x_start+self.sensor_x,:] = np.asarray(color)*256
+        txt = char_to_pixels(f'PC{cam_id} in obj')
+        rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
+        self.o3dvis.clear_geometries()
+        x_start += self.sensor_x
+        pcd_down = pcd.voxel_down_sample(voxel_size=self.voxel_size)
+        if cam_id == 1:
+          self.pcd_right.append(pcd_down)
+        elif cam_id == 2:
+          self.pcd_left.append(pcd_down)
+        pcd_combined += pcd_down
+      pcd_combined.estimate_normals(
+        search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+      self.pcds.append(pcd_combined)
+
+      # draw all frames
+      y_start, x_start = self.sensor_y*3, 0
       self.o3dvis.add_geometry(copy.deepcopy(self.world_frame).transform(world2objTrans))
+      for pc in self.pcds:
+        self.o3dvis.add_geometry(pc)
       self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
       self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
       self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
       color = self.o3dvis.capture_screen_float_buffer(do_render=True)
-      rgb_array[-self.sensor_y:, self.sensor_x*2:self.sensor_x*3, :] = np.asarray(color)*256
-      txt = char_to_pixels('PC1 in obj')
-      rgb_array[-16:, self.sensor_x*2:self.sensor_x*2+64, :] = txt
+      rgb_array[y_start:y_start+self.sensor_y, x_start:x_start+self.sensor_x,:] = np.asarray(color)*256
+      txt = char_to_pixels(f'Unaligned PCs')
+      rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
       self.o3dvis.clear_geometries()
+      x_start += self.sensor_x
+
+      # aling with ICP
+      y_start, x_start = self.sensor_y*3, self.sensor_x
+      self.o3dvis.add_geometry(copy.deepcopy(self.world_frame).transform(world2objTrans))
+      # update pose graph
+      pc_num = len(self.pcds)
+      source_id = pc_num-1
+      for i in range(0, min(pc_num-1, self.matching_num)):
+        target_id = pc_num-2-i
+        transformation_icp, information_icp, rmse, fitness = pairwise_registration(
+          self.pcds[source_id], self.pcds[target_id],
+          self.max_correspondence_distance_coarse,
+          self.max_correspondence_distance_fine)
+        if i == 0:  # odometry case
+          self.odometry = np.dot(transformation_icp, self.odometry)
+          self.pose_graph.nodes.append(
+            o3d.pipelines.registration.PoseGraphNode(
+              np.linalg.inv(self.odometry)))
+          self.pose_graph.edges.append(
+            o3d.pipelines.registration.PoseGraphEdge(source_id,
+                                                    target_id,
+                                                    transformation_icp,
+                                                    information_icp,
+                                                    uncertain=False))
+        else:  # loop closure case
+          self.pose_graph.edges.append(
+            o3d.pipelines.registration.PoseGraphEdge(source_id,
+                                                    target_id,
+                                                    transformation_icp,
+                                                    information_icp,
+                                                    uncertain=True))
+      transformation_icp, information_icp, rmse, fitness = pairwise_registration(
+        self.pcds[source_id], self.pcds[0],
+        self.max_correspondence_distance_coarse,
+        self.max_correspondence_distance_fine)
+
+      if fitness < self.fit_bar:
+        self.closed_loop = True
+        self.pose_graph.edges.append(
+          o3d.pipelines.registration.PoseGraphEdge(source_id,
+                                                  0,
+                                                  transformation_icp,
+                                                  information_icp,
+                                                  uncertain=True))
+        option = o3d.pipelines.registration.GlobalOptimizationOption(
+          max_correspondence_distance=self.max_correspondence_distance_fine,
+          edge_prune_threshold=0.25,
+          reference_node=0)
+        o3d.pipelines.registration.global_optimization(
+          self.pose_graph,
+          o3d.pipelines.registration.GlobalOptimizationLevenbergMarquardt(),
+          o3d.pipelines.registration.GlobalOptimizationConvergenceCriteria(),
+          option)
       
+      for point_id, pc in enumerate(self.pcds):
+        self.o3dvis.add_geometry(copy.deepcopy(pc).transform(self.pose_graph.nodes[point_id].pose))
+      self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
+      self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
+      self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
+      color = self.o3dvis.capture_screen_float_buffer(do_render=True)
+      rgb_array[y_start:y_start+self.sensor_y, x_start:x_start+self.sensor_x,:] = np.asarray(color)*256
+      txt = char_to_pixels(f'Aligned PCs')
+      rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
+      txt = char_to_pixels(f'rms0:{rmse:.3f}')
+      rgb_array[y_start+16:y_start+32, x_start:x_start+64, :] = txt
+      txt = char_to_pixels(f'fit0:{fitness:.3f}')
+      rgb_array[y_start+32:y_start+48, x_start:x_start+64, :] = txt
+      if self.closed_loop:
+        txt = char_to_pixels(f'Closed Loop')
+        rgb_array[y_start+48:y_start+64, x_start:x_start+64, :] = txt
+      self.o3dvis.clear_geometries()
+
       return rgb_array
 
   def ezpolicy(self, obs):
@@ -493,7 +622,7 @@ if __name__ == '__main__':
   env = RollerEnv()
   obs = env.reset()
   imgs = []
-  for _ in tqdm(range(6)):
+  for _ in tqdm(range(20)):
     # act = env.ezpolicy(obs)
     act = env.action_space.new()
     act['wrist_vel'] = 0.

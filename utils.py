@@ -4,6 +4,7 @@ import collections
 import numpy as np
 import gym
 from PIL import Image, ImageFont, ImageDraw
+import open3d as o3d
 
 import pybullet as p
 
@@ -92,6 +93,22 @@ def char_to_pixels(text, path='arialbd.ttf', fontsize=14):
   arr = np.asarray(image)
   arr = np.expand_dims(arr, 2).repeat(3, axis=2)
   return arr
+
+def pairwise_registration(source, target, max_correspondence_distance_coarse,
+                          max_correspondence_distance_fine):
+  icp_coarse = o3d.pipelines.registration.registration_icp(
+    source, target, max_correspondence_distance_coarse, np.identity(4),
+    o3d.pipelines.registration.TransformationEstimationPointToPlane())
+  icp_fine = o3d.pipelines.registration.registration_icp(
+    source, target, max_correspondence_distance_fine,
+    icp_coarse.transformation,
+    o3d.pipelines.registration.TransformationEstimationPointToPlane())
+  transformation_icp = icp_fine.transformation
+  rmse, fitness = icp_fine.inlier_rmse, icp_fine.fitness
+  information_icp = o3d.pipelines.registration.get_information_matrix_from_point_clouds(
+    source, target, max_correspondence_distance_fine,
+    icp_fine.transformation)
+  return transformation_icp, information_icp, rmse, fitness
 
 if __name__ == '__main__':
   arr = char_to_pixels('a')

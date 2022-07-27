@@ -6,7 +6,15 @@ Based on PyBullet and Tacto.
 
 ### Reconstruction Environment
 
+* Single sensor case
+
 ![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4m3v8vii9g20sg0e8b2a.gif)
+
+* Multi-sensor with ICP refinement
+
+![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4m8poz16hg20sg0sg1kz.gif)
+
+
 
 ### Physical Environment
 
@@ -50,8 +58,8 @@ pip install scipyplot deepdish tacto
   - [x] attach sensor to fixed joint (2022.7.23)
   - [ ] Compositonal handcrafted policy
 - [ ] Reconstruct the object from depth image
-  - [ ] With wide camera range
-    - [ ] With true object position
+  - [x] With wide camera range (2022.7.27)
+    - [x] With true object position
     - [ ] With position esitimate from roller angle
   - [ ] With small camera range
   - [ ] With moving camera
