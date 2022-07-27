@@ -41,16 +41,21 @@ pip install scipyplot deepdish tacto
 - [x] Replace Sensor with Roller (2022.07.21)
 - [ ] Handcrafted policy for reorientation
   - [x] Single rotation handcrafted policy (2022.7.22)
+  - [x] attach sensor to fixed joint (2022.7.23)
   - [ ] Compositonal handcrafted policy
-  - [ ] attach sensor to fixed joint
+- [ ] Reconstruct the object from depth image
+  - [ ] With wide camera range
+  - [ ] With small camera range
+  - [ ] With moving camera
+- [ ] Reconstruct the object from tactile sensor
 
 ### L2
 
 - [x] Gym Wrapper (2022.07.21)
-- [ ] Roller Control Suite
+- [x] Roller Control Suite
   - [x] Add roller model to simulation (2022.7.22)
-  - [ ] Add sensor to simulation (2022.7.22)
-- [ ] off screen rendering
+  - [x] Add sensor to simulation (2022.7.22)
+- [x] off screen rendering (2022.7.27)
 
 ### L3
 

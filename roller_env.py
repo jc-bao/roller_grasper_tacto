@@ -11,6 +11,9 @@ import gym
 from gym import spaces
 from gym.envs.registration import register
 from scipy.spatial.transform import Rotation as R
+import skvideo.io
+from tqdm import tqdm
+from PIL import Image
 
 from utils import Camera, convert_obs_to_obs_space, unifrom_sample_quaternion
 
@@ -185,11 +188,11 @@ class RollerEnv(gym.Env):
   reward_per_step = -0.01
 
   def __init__(self):
-    px.init(mode=p.GUI)
-    p.configureDebugVisualizer(p.COV_ENABLE_GUI, False)
-    p.resetDebugVisualizerCamera(
-      cameraDistance=0.2, cameraYaw=90, cameraPitch=-20, cameraTargetPosition=[0.0, 0, 0.1])
-    p.setRealTimeSimulation(False)
+    self._p = px.init(mode=p.DIRECT)
+    # p.configureDebugVisualizer(p.COV_ENABLE_GUI, False)
+    # p.resetDebugVisualizerCamera(
+    #   cameraDistance=0.2, cameraYaw=90, cameraPitch=-20, cameraTargetPosition=[0.0, 0, 0.1])
+    # p.setRealTimeSimulation(False)
     robot_params = {
       'urdf_path': 'assets/robots/roller.urdf',
       'use_fixed_base': True,
@@ -205,12 +208,15 @@ class RollerEnv(gym.Env):
       'roll_r_angle': 0,
     })
     self.robot = RollerGrapser(robot_params, init_state)
-    self.obj = px.Body(urdf_path='assets/objects/rounded_cube.urdf',
+    self.obj = px.Body(urdf_path='assets/objects/curved_cube.urdf',
                        base_position=[0.000, 0, 0.13], global_scaling=1)
+    self.obj_copy = px.Body(urdf_path='assets/objects/curved_cube.urdf',
+                       base_position=[0.0, 0.2, 0.13], global_scaling=1, use_fixed_base=
+                       True)
     self.ghost_obj = px.Body(urdf_path='assets/objects/rounded_cube_ghost.urdf',
                              base_position=[0.000, 0, 0.18], global_scaling=1, use_fixed_base=True)
     self.sensor = tacto.Sensor(
-      width=128, height=128, visualize_gui=True, config_path='assets/sensors/roller.yml')
+      width=128, height=192, visualize_gui=False, config_path='assets/sensors/roller.yml')
     self.camera = Camera()
     self.viewer = None
     self.sensor.add_camera(self.robot.id, self.robot.digit_links)
@@ -223,6 +229,7 @@ class RollerEnv(gym.Env):
     reward = self.reward_per_step + int(done)
     info = {}
     self.robot.set_actions(action)
+    self.obj_copy.set_base_pose(self.obj_copy.init_base_position, self.obj.get_base_pose()[1])
     p.stepSimulation()
     self.obs = self._get_obs()
     return self.obs, reward, done, info
@@ -262,21 +269,66 @@ class RollerEnv(gym.Env):
     dx, dy = np.random.randn(2) * 0.0
     x, y, z = self.obj.init_base_position
     position = [x + dx, y + dy, z]
-    obj_orn = unifrom_sample_quaternion()
+    # obj_orn = unifrom_sample_quaternion()
+    obj_orn = [0, 0, 0, 1]
     self.obj.set_base_pose(position, obj_orn)
     # get initial observation
     self.obs = self._get_obs()
     return self.obs
 
   def render(self, mode="human"):
-    def _to_uint8(depth):
-      min_, max_ = depth.min(), depth.max()
-      return ((depth - min_) / (max_ - min_) * 255).astype(np.uint8)
-    # color = np.concatenate([digit.color for digit in self.obs.sensor], axis=1)
-    # depth = np.concatenate([digit.depth for digit in self.obs.sensor], axis=1)
-    color = [digit.color for digit in self.obs.sensor]
-    depth = [digit.depth for digit in self.obs.sensor]
-    self.sensor.updateGUI(color, depth)
+    if mode == "human":
+      color = [digit.color for digit in self.obs.sensor]
+      depth = [digit.depth for digit in self.obs.sensor]
+      self.sensor.updateGUI(color, depth)
+    elif mode == "rgb_array":
+      # frame data
+      width = 1024
+      height = 512
+      view_matrix = p.computeViewMatrixFromYawPitchRoll(
+        cameraTargetPosition=[0, 0, 0.1],
+        distance=0.2,
+        yaw=90,
+        pitch=-20,
+        roll=0,
+        upAxisIndex=2)
+      proj_matrix = p.computeProjectionMatrixFOV(
+        fov=60, aspect=float(width)/height,
+        nearVal=0.1, farVal=100.0)
+      (_, _, px, _, _) = p.getCameraImage(
+        width=width, height=height, viewMatrix=view_matrix,
+        projectionMatrix=proj_matrix,
+        renderer=p.ER_BULLET_HARDWARE_OPENGL
+      )
+      rgb_array = np.array(px)
+      rgb_array = rgb_array[:, :, :3]
+      # sensor data
+      for i in range(len(self.obs.sensor)):
+        color = self.obs.sensor[i].color
+        depth = self.obs.sensor[i].depth
+        shape_x, shape_y = depth.shape[:2]
+        rgb_array[shape_x*i:shape_x*(i+1), :shape_y, :] = color
+        rgb_array[shape_x*i:shape_x*(i+1), shape_y:shape_y*2, :] = np.expand_dims(depth*256, 2).repeat(3, axis=2)
+      # depth data
+      depth_x = 256
+      depth_y = 256
+      view_matrix = p.computeViewMatrixFromYawPitchRoll(
+        cameraTargetPosition=self.obj_copy.init_base_position,
+        distance=0.05,
+        yaw=180,
+        pitch=0,
+        roll=0,
+        upAxisIndex=2)
+      proj_matrix = p.computeProjectionMatrixFOV(
+        fov=90, aspect=float(depth_x)/depth_y,
+        nearVal=0.01, farVal=0.08)
+      width, height, rgbImg, depthImg, segImg = p.getCameraImage(
+        width=depth_x, height=depth_y, viewMatrix=view_matrix,
+        projectionMatrix=proj_matrix,
+        renderer=p.ER_BULLET_HARDWARE_OPENGL
+      )
+      rgb_array[:depth_y, -depth_x:, :] = np.expand_dims(depthImg*256, 2).repeat(3, axis=2)
+      return rgb_array
 
   def ezpolicy(self, obs):
     # ===parse observation===
@@ -304,7 +356,7 @@ class RollerEnv(gym.Env):
       action['wrist_vel'] = np.clip(local_omega[..., 2], -1, 1)
     else:
       action['wrist_vel'] = np.clip(local_omega[..., 2] -
-                              local_omega[..., 1] * np.tan(pitch), -1, 1)
+                                    local_omega[..., 1] * np.tan(pitch), -1, 1)
     if delta < err:
       action['wrist_vel'] *= delta/err
     action['pitch_l_vel'] = np.clip(local_omega[..., 1], -1, 1)
@@ -351,15 +403,20 @@ register(
 if __name__ == '__main__':
   env = RollerEnv()
   obs = env.reset()
-  for _ in range(1000):
-    act = env.ezpolicy(obs)
-    # act = env.action_space.new()
-    # act['wrist_vel'] = 0.
-    # act['pitch_l_vel'] = 0.
-    # act['pitch_r_vel'] = 0.
-    # act['roll_l_vel'] = 1.
-    # act['roll_r_vel'] = 1.
+  imgs = []
+  for _ in tqdm(range(10)):
+    # act = env.ezpolicy(obs)
+    act = env.action_space.new()
+    act['wrist_vel'] = 0.
+    act['pitch_l_vel'] = 0.
+    act['pitch_r_vel'] = 0.
+    act['roll_l_vel'] = 1.
+    act['roll_r_vel'] = 1.
     obs, rew, done, info = env.step(act)
-    env.render()
+    imgs.append(env.render(mode='rgb_array'))
     if done:
       obs = env.reset()
+  skvideo.io.vwrite('render/render.mp4', np.array(imgs))
+  imgs = [Image.fromarray(img) for img in imgs]
+  imgs[0].save("render/render.gif", save_all=True,
+               append_images=imgs[1:], duration=50, loop=0)

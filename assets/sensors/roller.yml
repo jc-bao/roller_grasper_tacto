@@ -5,7 +5,7 @@ sensor:
   
   camera:
     - cam0:
-      position: [0.00, 0.00, -0.0] # Camera position
+      position: [0.00, 0.00, 0.00] # Camera position
       orientation: [90, 0, -90] # Euler angles, "xyz", in degrees; e.g. [0, 0, 0]: towards negative z-axis; [90, 0, -90]: towards x-axis
       yfov: 90 # Vertical field of view in degrees
       znear: 0.004 # Distance to the near clipping plane, in meters
@@ -26,14 +26,14 @@ sensor:
     origin: [0, 0.0, 0.0] # center of the light plane, in meters
     polar: False # True: apply polar coordinates; False: apply cartesian coordinates;    
     xyz: # cartesian coordinates
-      coords: [[0.00, 0.015, 0.015001], [-0.013, -0.0075, 0.015001], [0.013, -0.0075, 0.015001], [0.000, 0.015, -0.015001], [-0.013, -0.0075, -0.015001], [0.013, -0.0075, -0.015001]]
+      coords: [[0.00, 0.019, 0.024001], [-0.015, -0.01, 0.024001], [0.015, -0.01, 0.024001], [0.000, 0.019, -0.024001], [-0.015, -0.01, -0.024001], [0.015, -0.01, -0.024001]]
     # xrtheta: # polar coordinates in y-z plane
     #   xs: [0.0013, 0.0013, 0.0013, 0.0013, 0.0013, 0.0013] # x coordinate of the y-z plane
     #   rs: [-0.013, -0.013, -0.013, 0.013, 0.013, 0.013] # r in polar coordinates
     #   thetas: [0, 120, 240, 300, 180, 60] # theta in polar coordinates, in degrees
     
     colors: [[0, 0, 1], [0, 1, 0], [1, 0, 0], [1, 0, 0], [0, 0, 1], [0, 1, 0]] # R G B color
-    intensities: [0.15, 0.15, 0.15, 0.15, 0.15, 0.15] # light intensity
+    intensities: [0.5001, 0.5001, 0.5001, 0.5001, 0.5001, 0.5001] # light intensity
 
   noise:
     color:
@@ -42,5 +42,5 @@ sensor:
 
   force:
     enable: True # flag for enable force feedback. When enabled, the larger normal force is, the closer object is adjusted to the sensor. 
-    range_force: [0, 10000] # dynamic range of forces used to simulate the elastomer deformation
-    max_deformation: 0.001 # max pose depth adjustment, in meters
+    range_force: [0, 10] # dynamic range of forces used to simulate the elastomer deformation
+    max_deformation: 0.005 # max pose depth adjustment, in meters
