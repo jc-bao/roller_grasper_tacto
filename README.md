@@ -14,7 +14,9 @@ Based on PyBullet and Tacto.
 
 ![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4m8poz16hg20sg0sg1kz.gif)
 
+* Pose estimation with ICP+GO under noisy position esitimatioon
 
+![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4may1gbhig20sg0sgkjl.gif)
 
 ### Physical Environment
 
@@ -60,10 +62,11 @@ pip install scipyplot deepdish tacto
 - [ ] Reconstruct the object from depth image
   - [x] With wide camera range (2022.7.27)
     - [x] With true object position
-    - [ ] With position esitimate from roller angle
+    - [x] With position esitimate from roller angle
   - [ ] With small camera range
   - [ ] With moving camera
 - [ ] Reconstruct the object from tactile sensor
+- [ ] Efficient way to detect close loop
 
 ### L2
 
