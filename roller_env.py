@@ -15,6 +15,7 @@ import skvideo.io
 from tqdm import tqdm
 from PIL import Image
 import open3d as o3d
+from scipy.spatial.transform import Rotation as R
 
 from utils import Camera, convert_obs_to_obs_space, unifrom_sample_quaternion, char_to_pixels
 
@@ -249,7 +250,7 @@ class RollerEnv(gym.Env):
     info = {}
     self.robot.set_actions(action)
     self.obj_copy.set_base_pose(
-      self.obj_copy.init_base_position, self.obj.get_base_pose()[1])
+      self.obj_copy.init_base_position-self.obj.init_base_position + self.obj.get_base_pose()[0], self.obj.get_base_pose()[1])
     p.stepSimulation()
     self.obs = self._get_obs()
     return self.obs, reward, done, info
@@ -330,7 +331,7 @@ class RollerEnv(gym.Env):
         rgb_array[shape_x*i:shape_x*(i+1), :shape_y, :] = color
         rgb_array[shape_x*i:shape_x*(i+1), shape_y:shape_y*2,
                   :] = np.expand_dims(depth*256, 2).repeat(3, axis=2)
-        txt = char_to_pixels(f'gel{i}')
+        txt = char_to_pixels(f'GEL{i+1}')
         rgb_array[shape_x*i:shape_x*i+16, :64, :] = txt
       # depth data
       view_matrix = p.computeViewMatrixFromYawPitchRoll(
@@ -383,6 +384,7 @@ class RollerEnv(gym.Env):
       txt = char_to_pixels('PC1 in cam')
       rgb_array[-16:, :64, :] = txt
       self.o3dvis.clear_geometries()
+
       # draw point cloud in world frame
       self.o3dvis.add_geometry(self.world_frame)
       pcd.transform(cam2worldTrans)
@@ -395,7 +397,25 @@ class RollerEnv(gym.Env):
       txt = char_to_pixels('PC1 in world')
       rgb_array[-16:, self.sensor_x:self.sensor_x+64, :] = txt
       self.o3dvis.clear_geometries()
+
       # draw object in object frame (for reconstruction)
+      obj2worldTrans = np.zeros((4,4))
+      obj2worldTrans[:3,:3] = R.from_quat(self.obj_copy.get_base_pose()[1]).as_matrix()
+      obj2worldTrans[:3,3] = (self.obj_copy.get_base_pose()[0] - self.obj_copy.init_base_position)
+      obj2worldTrans[3,3] = 1
+      world2objTrans = np.linalg.inv(obj2worldTrans)
+      pcd.transform(world2objTrans)
+      self.o3dvis.add_geometry(pcd)
+      self.o3dvis.add_geometry(copy.deepcopy(self.world_frame).transform(world2objTrans))
+      self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
+      self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
+      self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
+      color = self.o3dvis.capture_screen_float_buffer(do_render=True)
+      rgb_array[-self.sensor_y:, self.sensor_x*2:self.sensor_x*3, :] = np.asarray(color)*256
+      txt = char_to_pixels('PC1 in obj')
+      rgb_array[-16:, self.sensor_x*2:self.sensor_x*2+64, :] = txt
+      self.o3dvis.clear_geometries()
+      
       return rgb_array
 
   def ezpolicy(self, obs):
@@ -473,7 +493,7 @@ if __name__ == '__main__':
   env = RollerEnv()
   obs = env.reset()
   imgs = []
-  for _ in tqdm(range(60)):
+  for _ in tqdm(range(6)):
     # act = env.ezpolicy(obs)
     act = env.action_space.new()
     act['wrist_vel'] = 0.
