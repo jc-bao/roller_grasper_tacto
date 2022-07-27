@@ -3,6 +3,7 @@ import pybulletX as px
 import collections
 import numpy as np
 import gym
+from PIL import Image, ImageFont, ImageDraw
 
 import pybullet as p
 
@@ -80,3 +81,18 @@ def convert_obs_to_obs_space(obs):
 def unifrom_sample_quaternion():
   q = p.getQuaternionFromEuler([np.random.uniform(-np.pi, np.pi), np.random.uniform(-np.pi, np.pi), np.random.uniform(-np.pi, np.pi)])
   return q
+
+def char_to_pixels(text, path='arialbd.ttf', fontsize=14):
+  # font = ImageFont.truetype(path, fontsize) 
+  # w, h = font.getsize(text)  
+  # h *= 2
+  image = Image.new('L', (64, 16), 256)  
+  draw = ImageDraw.Draw(image)
+  draw.text((0, 0), text, align='center')
+  arr = np.asarray(image)
+  arr = np.expand_dims(arr, 2).repeat(3, axis=2)
+  return arr
+
+if __name__ == '__main__':
+  arr = char_to_pixels('a')
+  print(arr)

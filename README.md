@@ -4,6 +4,12 @@ Based on PyBullet and Tacto.
 
 ## Environment
 
+### Reconstruction Environment
+
+![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4m3v8vii9g20sg0e8b2a.gif)
+
+### Physical Environment
+
 |Roller Toy Environment| Roller Env (Random explore)|Render gelsight environment|
 |-|-|-|
 |![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4g69amxucj20jo0gs3z1.jpg)|![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4g94hyxngg20cw0ac4qq.gif)|![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4gsdv7h0hg20ee08uavr.gif)|

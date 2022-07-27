@@ -16,7 +16,7 @@ from tqdm import tqdm
 from PIL import Image
 import open3d as o3d
 
-from utils import Camera, convert_obs_to_obs_space, unifrom_sample_quaternion
+from utils import Camera, convert_obs_to_obs_space, unifrom_sample_quaternion, char_to_pixels
 
 log = logging.getLogger(__name__)
 
@@ -207,9 +207,9 @@ class RollerEnv(gym.Env):
     self.o3dvis = o3d.visualization.Visualizer()
     self.o3dvis.create_window(
       width=self.sensor_x, height=self.sensor_y, visible=False)
-    self.world_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3)
+    self.world_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05)
     self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
-    self.o3dvis.get_view_control().set_front(np.array([-1, -1, -1]))
+    self.o3dvis.get_view_control().set_front(np.array([1, 1, 1]))
     self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
 
     # robot parameters
@@ -330,6 +330,8 @@ class RollerEnv(gym.Env):
         rgb_array[shape_x*i:shape_x*(i+1), :shape_y, :] = color
         rgb_array[shape_x*i:shape_x*(i+1), shape_y:shape_y*2,
                   :] = np.expand_dims(depth*256, 2).repeat(3, axis=2)
+        txt = char_to_pixels(f'gel{i}')
+        rgb_array[shape_x*i:shape_x*i+16, :64, :] = txt
       # depth data
       view_matrix = p.computeViewMatrixFromYawPitchRoll(
         cameraTargetPosition=self.obj_copy.init_base_position,
@@ -348,6 +350,8 @@ class RollerEnv(gym.Env):
       )
       rgb_array[:self.sensor_y, -self.sensor_x:,
                 :] = np.expand_dims(depthImg*256, 2).repeat(3, axis=2)
+      txt = char_to_pixels('depth1')
+      rgb_array[:16, -self.sensor_x:-self.sensor_x+64, :] = txt
       # point cloud data
       rgbImg = Image.fromarray(rgbImg, mode='RGBA').convert('RGB')
       color = o3d.geometry.Image(np.array(rgbImg))
@@ -357,30 +361,39 @@ class RollerEnv(gym.Env):
       depthImg[depthImg > 0.98] = 0
       depth = o3d.geometry.Image((depthImg*255).astype(np.uint8))
       rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
-        color, depth, depth_scale=self.sensor_far, depth_trunc=1000, convert_rgb_to_intensity=False)
+        color, depth, depth_scale=1/self.sensor_far, depth_trunc=1000, convert_rgb_to_intensity=False)
       pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
         rgbd, self.pinhole_camera_intrinsic)
       
       cam2worldTrans = np.array([
-        [1, 0, 0, self.obj_copy.init_base_position[0]+self.depth_cam_distance],
-        [0, 0, -1, self.obj_copy.init_base_position[1]],
-        [0, 1, 0, self.obj_copy.init_base_position[2]],
+        [-1, 0, 0, 0],
+        [0, 0, -1, self.depth_cam_distance],
+        [0, -1, 0, 0],
         [0, 0, 0, 1]])
+      world2camTrans = np.linalg.inv(cam2worldTrans)
+
       # draw point cloud in camera frame
       self.o3dvis.add_geometry(pcd)
+      self.o3dvis.add_geometry(copy.deepcopy(self.world_frame).transform(world2camTrans))
+      self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
+      self.o3dvis.get_view_control().set_front(np.array([0, 0, -1]))
+      self.o3dvis.get_view_control().set_up(np.array([0, -1, 0]))
       color = self.o3dvis.capture_screen_float_buffer(do_render=True)
       rgb_array[-self.sensor_y:, :self.sensor_x, :] = np.asarray(color)*256
+      txt = char_to_pixels('PC1 in cam')
+      rgb_array[-16:, :64, :] = txt
       self.o3dvis.clear_geometries()
-      self.o3dvis.add_geometry(copy.deepcopy(self.world_frame).transform(np.linalg.inv(cam2worldTrans)))
       # draw point cloud in world frame
       self.o3dvis.add_geometry(self.world_frame)
-      cemera_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
-        size=0.08).transform(cam2worldTrans)
       pcd.transform(cam2worldTrans)
       self.o3dvis.add_geometry(pcd)
-      self.o3dvis.add_geometry(cemera_frame)
+      self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
+      self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
+      self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
       color = self.o3dvis.capture_screen_float_buffer(do_render=True)
       rgb_array[-self.sensor_y:, self.sensor_x:self.sensor_x*2, :] = np.asarray(color)*256
+      txt = char_to_pixels('PC1 in world')
+      rgb_array[-16:, self.sensor_x:self.sensor_x+64, :] = txt
       self.o3dvis.clear_geometries()
       # draw object in object frame (for reconstruction)
       return rgb_array
@@ -460,7 +473,7 @@ if __name__ == '__main__':
   env = RollerEnv()
   obs = env.reset()
   imgs = []
-  for _ in tqdm(range(10)):
+  for _ in tqdm(range(60)):
     # act = env.ezpolicy(obs)
     act = env.action_space.new()
     act['wrist_vel'] = 0.
