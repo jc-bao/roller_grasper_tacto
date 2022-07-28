@@ -247,9 +247,11 @@ class RollerEnv(gym.Env):
       'roll_r_angle': 0,
     })
     self.robot = RollerGrapser(robot_params, init_state)
-    self.obj = px.Body(urdf_path='assets/objects/curved_cube.urdf',
+    obj_path = 'assets/objects/curved_cube.urdf'
+    obj_path = '/juno/u/chaoyi/rl/egad/data/egad_eval_set/processed_meshes/egda.urdf'
+    self.obj = px.Body(urdf_path=obj_path,
                        base_position=[0.000, 0, 0.13], global_scaling=1)
-    self.obj_copy = px.Body(urdf_path='assets/objects/curved_cube.urdf',
+    self.obj_copy = px.Body(urdf_path=obj_path,
                             base_position=[0.0, 0.2, 0.13], global_scaling=1, use_fixed_base=True)
     self.ghost_obj = px.Body(urdf_path='assets/objects/rounded_cube_ghost.urdf',
                              base_position=[0.000, 0, 0.18], global_scaling=1, use_fixed_base=True)
@@ -697,7 +699,7 @@ if __name__ == '__main__':
   env = RollerEnv()
   obs = env.reset()
   imgs = []
-  for _ in tqdm(range(60)):
+  for _ in tqdm(range(4)):
     # act = env.ezpolicy(obs)
     act = env.action_space.new()
     act['wrist_vel'] = 0.
