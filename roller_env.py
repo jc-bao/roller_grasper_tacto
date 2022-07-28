@@ -17,6 +17,7 @@ from tqdm import tqdm
 from PIL import Image
 import open3d as o3d
 from scipy.spatial.transform import Rotation as R
+import dcargs
 
 from utils import Camera, convert_obs_to_obs_space, unifrom_sample_quaternion, char_to_pixels, pairwise_registration
 
@@ -190,7 +191,7 @@ class RollerGrapser(px.Robot):
 class RollerEnv(gym.Env):
   reward_per_step = -0.01
 
-  def __init__(self):
+  def __init__(self, obj_urdf = 'assets/objects/curved_cube.urdf'):
     self._p = px.init(mode=p.DIRECT)
     # p.configureDebugVisualizer(p.COV_ENABLE_GUI, False)
     # p.resetDebugVisualizerCamera(
@@ -218,7 +219,7 @@ class RollerEnv(gym.Env):
     self.max_correspondence_distance_coarse = self.voxel_size * 15
     self.max_correspondence_distance_fine = self.voxel_size * 1.5
     self.start_detect_loop_idx = 38
-    self.detect_loop_extend = 15
+    self.detect_loop_extend = 15*8
 
     # create o3d render window
     self.o3dvis = o3d.visualization.Visualizer()
@@ -247,11 +248,9 @@ class RollerEnv(gym.Env):
       'roll_r_angle': 0,
     })
     self.robot = RollerGrapser(robot_params, init_state)
-    obj_path = 'assets/objects/curved_cube.urdf'
-    obj_path = '/juno/u/chaoyi/rl/egad/data/egad_eval_set/processed_meshes/egda.urdf'
-    self.obj = px.Body(urdf_path=obj_path,
-                       base_position=[0.000, 0, 0.13], global_scaling=1)
-    self.obj_copy = px.Body(urdf_path=obj_path,
+    self.obj = px.Body(urdf_path=obj_urdf,
+                       base_position=[0.000, 0, 0.11], global_scaling=1)
+    self.obj_copy = px.Body(urdf_path=obj_urdf,
                             base_position=[0.0, 0.2, 0.13], global_scaling=1, use_fixed_base=True)
     self.ghost_obj = px.Body(urdf_path='assets/objects/rounded_cube_ghost.urdf',
                              base_position=[0.000, 0, 0.18], global_scaling=1, use_fixed_base=True)
@@ -695,11 +694,11 @@ register(
   id="roller-v0", entry_point="roller_env:RollerEnv",
 )
 
-if __name__ == '__main__':
-  env = RollerEnv()
+def main(obj_urdf:str = 'assets/objects/curved_cube.urdf', file_name:str = 'render'):
+  env = RollerEnv(obj_urdf=obj_urdf)
   obs = env.reset()
   imgs = []
-  for _ in tqdm(range(4)):
+  for _ in tqdm(range(120)):
     # act = env.ezpolicy(obs)
     act = env.action_space.new()
     act['wrist_vel'] = 0.
@@ -711,8 +710,12 @@ if __name__ == '__main__':
     imgs.append(env.render(mode='rgb_array'))
     if done:
       obs = env.reset()
-  skvideo.io.vwrite('render/render.mp4', np.array(imgs))
+  skvideo.io.vwrite(f'render/{file_name}.mp4', np.array(imgs))
   imgs = [Image.fromarray(img) for img in imgs]
-  imgs[0].save("render/render.gif", save_all=True,
+  imgs[0].save(f"render/{file_name}.gif", save_all=True,
                append_images=imgs[1:], duration=50, loop=0)
   env.close()
+
+
+if __name__ == '__main__':
+  dcargs.cli(main)
