@@ -18,6 +18,10 @@ Based on PyBullet and Tacto.
 
 ![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4may1gbhig20sg0sgkjl.gif)
 
+* Reconstuct object from narrow observation angle
+
+![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4mimanv6mg20sg0sgtlz.gif)
+
 ### Physical Environment
 
 |Roller Toy Environment| Roller Env (Random explore)|Render gelsight environment|
@@ -59,12 +63,13 @@ pip install scipyplot deepdish tacto
   - [x] Single rotation handcrafted policy (2022.7.22)
   - [x] attach sensor to fixed joint (2022.7.23)
   - [ ] Compositonal handcrafted policy
-- [ ] Reconstruct the object from depth image
+- [x] Reconstruct the object from depth image
   - [x] With wide camera range (2022.7.27)
     - [x] With true object position
     - [x] With position esitimate from roller angle
-  - [ ] With small camera range
-  - [ ] With moving camera
+  - [x] With small camera range (2022.7.27)
+  - [x] With moving camera (2022.7.27)
+- [ ] Reconstruct of different shapes (e.g. EDGA dataset)
 - [ ] Reconstruct the object from tactile sensor
 - [ ] Efficient way to detect close loop
 

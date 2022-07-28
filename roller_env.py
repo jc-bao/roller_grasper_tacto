@@ -199,24 +199,33 @@ class RollerEnv(gym.Env):
 
     # render parameters
     self.window_x, self.window_y = 1024, 512
-    self.sensor_x, self.sensor_y = 256, 256
-    self.sensor_near, self.sensor_far = 0.01, 0.08
-    self.depth_cam_distance = 0.05 
-    self.pinhole_camera_intrinsic = o3d.camera.PinholeCameraIntrinsic(self.sensor_x, self.sensor_y, max(
-      self.sensor_y, self.sensor_x)/2, max(self.sensor_y, self.sensor_x)/2, self.sensor_x/2, self.sensor_y/2)
+    self.sensor_x, self.sensor_y = 256, 64
+    self.sensor_size = max(self.sensor_x, self.sensor_y)
+    self.sensor_x_start = (self.sensor_size - self.sensor_x)//2
+    self.sensor_x_end = (self.sensor_size + self.sensor_x)//2
+    self.sensor_y_start = (self.sensor_size - self.sensor_y)//2
+    self.sensor_y_end = (self.sensor_size + self.sensor_y)//2
+    
+    self.sensor_near, self.sensor_far = 0.001, 0.08
+    self.depth_cam_min_distance = 0.03
+    self.pinhole_camera_intrinsic = o3d.camera.PinholeCameraIntrinsic(self.sensor_x, self.sensor_y,
+                                                                      self.sensor_size/2, self.sensor_size/2, self.sensor_x/2, self.sensor_y/2)
 
     # SLAM params
     self.matching_num = 5
-    self.voxel_size = 0.0001
-    self.fit_bar = 0.01 # fitness bar to conduct graph optimization
+    self.voxel_size = 0.00002
+    self.fit_bar = 0.01  # fitness bar to conduct graph optimization
     self.max_correspondence_distance_coarse = self.voxel_size * 15
     self.max_correspondence_distance_fine = self.voxel_size * 1.5
+    self.start_detect_loop_idx = 38
+    self.detect_loop_extend = 15
 
     # create o3d render window
     self.o3dvis = o3d.visualization.Visualizer()
     self.o3dvis.create_window(
-      width=self.sensor_x, height=self.sensor_y, visible=False)
-    self.world_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05)
+      width=self.sensor_size, height=self.sensor_size, visible=False)
+    self.world_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
+      size=0.05)
     self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
     self.o3dvis.get_view_control().set_front(np.array([1, 1, 1]))
     self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
@@ -259,14 +268,22 @@ class RollerEnv(gym.Env):
     info = {}
     self.robot.set_actions(action)
     self.obj_copy.set_base_pose(
-      np.asarray(self.obj_copy.init_base_position)-np.asarray(self.obj.init_base_position )+ np.asarray(self.obj.get_base_pose()[0]), self.obj.get_base_pose()[1])
-    
+      np.asarray(self.obj_copy.init_base_position)-np.asarray(self.obj.init_base_position) + np.asarray(self.obj.get_base_pose()[0]), self.obj.get_base_pose()[1])
+
     new_roll = self.robot.get_joint_state_by_name('joint4_left').joint_position
     delta_roll = new_roll - self.old_roll
     self.old_roll = new_roll
-    roller_width = self.robot.get_link_state_by_name('joint5_right')[0][1] - self.robot.get_link_state_by_name('joint5_left')[0][1] - 0.04
+    roller_width = self.robot.get_link_state_by_name('joint5_right')[
+      0][1] - self.robot.get_link_state_by_name('joint5_left')[0][1] - 0.04
     delta_obj_roll = delta_roll*0.04/roller_width
     self.obj_relative_angle += delta_obj_roll
+
+    self.obj_angle = R.from_quat(self.obj.get_base_pose()[1]).as_euler('xyz')[0]
+    angle_to_vertial_axis = (self.obj_angle+np.pi/4) % (np.pi/2) - np.pi/4
+    self.depth_cam_distance = self.depth_cam_min_distance / \
+      abs(np.cos(angle_to_vertial_axis))
+    if abs(self.obj_angle - np.pi) < np.pi/12 and ~self.closed_loop:
+      self.start_detect_loop_idx = len(self.pcd_esitimated)
 
     p.stepSimulation()
     self.obs = self._get_obs()
@@ -311,15 +328,19 @@ class RollerEnv(gym.Env):
     # obj_orn = unifrom_sample_quaternion()
     obj_orn = [0, 0, 0, 1]
     self.obj.set_base_pose(position, obj_orn)
+    # setup camera
+    self.depth_cam_distance = self.depth_cam_min_distance
     # get initial observation
     self.obs = self._get_obs()
-    self.pcd_esitimated, self.pcd_real= [], []
+    self.pcd_esitimated, self.pcd_real = [], []
     self.obj_relative_angle = 0
-    self.old_roll = self.robot.get_joint_state_by_name('joint5_left').joint_position
+    self.old_roll = self.robot.get_joint_state_by_name(
+      'joint5_left').joint_position
     # setup pose graph
     self.pose_graph = o3d.pipelines.registration.PoseGraph()
     self.odometry = np.identity(4)
-    self.pose_graph.nodes.append(o3d.pipelines.registration.PoseGraphNode(self.odometry))
+    self.pose_graph.nodes.append(
+      o3d.pipelines.registration.PoseGraphNode(self.odometry))
     return self.obs
 
   def render(self, mode="human"):
@@ -332,7 +353,7 @@ class RollerEnv(gym.Env):
 
       # frame data
       self.window_x = 1024
-      self.window_y = 512
+      self.window_y = 256
       view_matrix = p.computeViewMatrixFromYawPitchRoll(
         cameraTargetPosition=[0, 0, 0.1],
         distance=0.2,
@@ -348,7 +369,7 @@ class RollerEnv(gym.Env):
         projectionMatrix=proj_matrix,
         renderer=p.ER_BULLET_HARDWARE_OPENGL
       )
-      rgb_array[:self.window_y, :self.window_x,:] = np.array(px)[..., :3]
+      rgb_array[:self.window_y, :self.window_x, :] = np.array(px)[..., :3]
 
       # sensor data
       for i in range(len(self.obs.sensor)):
@@ -360,11 +381,11 @@ class RollerEnv(gym.Env):
                   :] = np.expand_dims(depth*256, 2).repeat(3, axis=2)
         txt = char_to_pixels(f'GEL{i+1}')
         rgb_array[shape_x*i:shape_x*i+16, :64, :] = txt
-        
+
       pcd_real_combined = o3d.geometry.PointCloud()
       pcd_esitimated_combined = o3d.geometry.PointCloud()
-      for cam_id in range(1,3):
-        y_start, x_start = self.sensor_y*cam_id, 0
+      for cam_id in range(1, 3):
+        y_start, x_start = self.sensor_size*cam_id, 0
         # depth data
         view_matrix = p.computeViewMatrixFromYawPitchRoll(
           cameraTargetPosition=self.obj_copy.init_base_position,
@@ -377,11 +398,14 @@ class RollerEnv(gym.Env):
           fov=90, aspect=float(self.sensor_x)/self.sensor_y,
           nearVal=self.sensor_near, farVal=self.sensor_far)
         width, height, rgbImg, depthImg, segImg = p.getCameraImage(
-          width=self.sensor_x, height=self.sensor_y, viewMatrix=view_matrix,
+          width=self.sensor_size, height=self.sensor_size, viewMatrix=view_matrix,
           projectionMatrix=proj_matrix,
           renderer=p.ER_BULLET_HARDWARE_OPENGL
         )
-        rgb_array[y_start:y_start+self.sensor_y, x_start:x_start+self.sensor_x,:] = np.expand_dims(depthImg*256, 2).repeat(3, axis=2)
+        rgbImg = np.asarray(rgbImg)[self.sensor_y_start:self.sensor_y_end, self.sensor_x_start:self.sensor_x_end]
+        depthImg = np.asarray(depthImg)[self.sensor_y_start:self.sensor_y_end, self.sensor_x_start:self.sensor_x_end]
+        rgb_array[y_start:y_start+self.sensor_y, x_start:x_start +
+                  self.sensor_x, :] = np.expand_dims(depthImg*256, 2).repeat(3, axis=2)
         txt = char_to_pixels(f'depth{cam_id}')
         rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
         x_start += self.sensor_x
@@ -417,33 +441,37 @@ class RollerEnv(gym.Env):
         world2camTrans = np.linalg.inv(cam2worldTrans)
 
         # object pose relative to camera
-        real_obj2worldTrans = np.zeros((4,4))
-        real_obj2worldTrans[:3,:3] = R.from_quat(self.obj_copy.get_base_pose()[1]).as_matrix()
-        real_obj2worldTrans[:3,3] = (np.asarray(self.obj_copy.get_base_pose()[0]) - np.asarray(self.obj_copy.init_base_position))
-        real_obj2worldTrans[3,3] = 1
+        real_obj2worldTrans = np.zeros((4, 4))
+        real_obj2worldTrans[:3, :3] = R.from_quat(
+          self.obj_copy.get_base_pose()[1]).as_matrix()
+        real_obj2worldTrans[:3, 3] = (np.asarray(self.obj_copy.get_base_pose()[
+                                      0]) - np.asarray(self.obj_copy.init_base_position))
+        real_obj2worldTrans[3, 3] = 1
         real_world2objTrans = np.linalg.inv(real_obj2worldTrans)
         # esitimate object orientation
-        esitimated_obj2worldTrans = np.zeros((4,4))
+        esitimated_obj2worldTrans = np.zeros((4, 4))
         obj_init_rot = R.from_quat(self.obj_copy.init_base_orientation)
-        local_rot = R.from_euler('x', -self.obj_relative_angle)
+        local_rot = R.from_euler('x', self.obj_relative_angle)
         obj_rot = local_rot*obj_init_rot
-        esitimated_obj2worldTrans[:3,:3] = obj_rot.as_matrix()
-        esitimated_obj2worldTrans[:3,3] = [0,0,0]
-        esitimated_obj2worldTrans[3,3] = 1
+        esitimated_obj2worldTrans[:3, :3] = obj_rot.as_matrix()
+        esitimated_obj2worldTrans[:3, 3] = [0, 0, 0]
+        esitimated_obj2worldTrans[3, 3] = 1
         esitimated_world2objTrans = np.linalg.inv(esitimated_obj2worldTrans)
 
         # draw point cloud in camera frame
         self.o3dvis.add_geometry(pcd)
-        self.o3dvis.add_geometry(copy.deepcopy(self.world_frame).transform(world2camTrans))
+        self.o3dvis.add_geometry(copy.deepcopy(
+          self.world_frame).transform(world2camTrans))
         self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
         self.o3dvis.get_view_control().set_front(np.array([0, 0, -1]))
         self.o3dvis.get_view_control().set_up(np.array([0, -1, 0]))
         color = self.o3dvis.capture_screen_float_buffer(do_render=True)
-        rgb_array[y_start:y_start+self.sensor_y, x_start:x_start+self.sensor_x,:] = np.asarray(color)*256
+        rgb_array[y_start:y_start+self.sensor_size,
+                  x_start:x_start+self.sensor_size, :] = np.asarray(color)*256
         txt = char_to_pixels(f'PC{cam_id} in cam')
         rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
         self.o3dvis.clear_geometries()
-        x_start += self.sensor_x
+        x_start += self.sensor_size
 
         # draw point cloud in world frame
         self.o3dvis.add_geometry(self.world_frame)
@@ -453,7 +481,8 @@ class RollerEnv(gym.Env):
         self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
         self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
         color = self.o3dvis.capture_screen_float_buffer(do_render=True)
-        rgb_array[y_start:y_start+self.sensor_y, x_start:x_start+self.sensor_x,:] = np.asarray(color)*256
+        rgb_array[y_start:y_start+self.sensor_size,
+                  x_start:x_start+self.sensor_size, :] = np.asarray(color)*256
         txt = char_to_pixels(f'PC{cam_id} in world')
         rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
         self.o3dvis.clear_geometries()
@@ -463,24 +492,30 @@ class RollerEnv(gym.Env):
         pcd_real = copy.deepcopy(pcd)
         pcd_esitimated = copy.deepcopy(pcd)
         pcd_real.transform(real_world2objTrans)
-        pcd_esitimated.transform(esitimated_obj2worldTrans)
+        pcd_esitimated.transform(esitimated_world2objTrans)
         pcd_esitimated.paint_uniform_color((1., 1., 0))
-        self.o3dvis.add_geometry(copy.deepcopy(pcd_real).translate([0,0,0.05]))
-        self.o3dvis.add_geometry(copy.deepcopy(pcd_esitimated).translate([0,0,-0.05]))
-        self.o3dvis.add_geometry(copy.deepcopy(self.world_frame).transform(real_world2objTrans).translate([0,0,0.05]))
-        self.o3dvis.add_geometry(copy.deepcopy(self.world_frame).transform(esitimated_world2objTrans).translate([0,0,-0.05]))
+        self.o3dvis.add_geometry(copy.deepcopy(
+          pcd_real).translate([0, 0, 0.05]))
+        self.o3dvis.add_geometry(copy.deepcopy(
+          pcd_esitimated).translate([0, 0, -0.05]))
+        self.o3dvis.add_geometry(copy.deepcopy(self.world_frame).transform(
+          real_world2objTrans).translate([0, 0, 0.05]))
+        self.o3dvis.add_geometry(copy.deepcopy(self.world_frame).transform(
+          esitimated_world2objTrans).translate([0, 0, -0.05]))
         self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
         self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
         self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
         color = self.o3dvis.capture_screen_float_buffer(do_render=True)
-        rgb_array[y_start:y_start+self.sensor_y, x_start:x_start+self.sensor_x,:] = np.asarray(color)*256
+        rgb_array[y_start:y_start+self.sensor_size,
+                  x_start:x_start+self.sensor_size, :] = np.asarray(color)*256
         txt = char_to_pixels(f'PC{cam_id} in obj')
         rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
         self.o3dvis.clear_geometries()
         x_start += self.sensor_x
         pcd_real_down = pcd_real.voxel_down_sample(voxel_size=self.voxel_size)
         pcd_real_combined += pcd_real_down
-        pcd_esitimated_down = pcd_esitimated.voxel_down_sample(voxel_size=self.voxel_size)
+        pcd_esitimated_down = pcd_esitimated.voxel_down_sample(
+          voxel_size=self.voxel_size)
         pcd_esitimated_combined += pcd_esitimated_down
       pcd_esitimated_combined.estimate_normals(
         search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
@@ -488,23 +523,26 @@ class RollerEnv(gym.Env):
       self.pcd_esitimated.append(pcd_esitimated_combined)
 
       # draw ground truth
-      y_start, x_start = self.sensor_y*3, 0
-      self.o3dvis.add_geometry(copy.deepcopy(self.world_frame).transform(real_world2objTrans))
+      y_start, x_start = self.sensor_size*3, 0
+      self.o3dvis.add_geometry(copy.deepcopy(
+        self.world_frame).transform(real_world2objTrans))
       for pc in self.pcd_real:
         self.o3dvis.add_geometry(pc)
       self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
       self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
       self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
       color = self.o3dvis.capture_screen_float_buffer(do_render=True)
-      rgb_array[y_start:y_start+self.sensor_y, x_start:x_start+self.sensor_x,:] = np.asarray(color)*256
+      rgb_array[y_start:y_start+self.sensor_size, x_start:x_start +
+                self.sensor_size, :] = np.asarray(color)*256
       txt = char_to_pixels(f'Ground truth')
       rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
       self.o3dvis.clear_geometries()
       x_start += self.sensor_x
 
       # aling with ICP
-      y_start, x_start = self.sensor_y*3, self.sensor_x
-      self.o3dvis.add_geometry(copy.deepcopy(self.world_frame).transform(real_world2objTrans))
+      y_start, x_start = self.sensor_size*3, self.sensor_size
+      self.o3dvis.add_geometry(copy.deepcopy(
+        self.world_frame).transform(real_world2objTrans))
       # update pose graph
       pc_num = len(self.pcd_esitimated)
       source_id = pc_num-1
@@ -521,53 +559,62 @@ class RollerEnv(gym.Env):
               np.linalg.inv(self.odometry)))
           self.pose_graph.edges.append(
             o3d.pipelines.registration.PoseGraphEdge(source_id,
-                                                    target_id,
-                                                    transformation_icp,
-                                                    information_icp,
-                                                    uncertain=False))
+                                                     target_id,
+                                                     transformation_icp,
+                                                     information_icp,
+                                                     uncertain=False))
         else:  # loop closure case
           self.pose_graph.edges.append(
             o3d.pipelines.registration.PoseGraphEdge(source_id,
-                                                    target_id,
-                                                    transformation_icp,
-                                                    information_icp,
-                                                    uncertain=True))
-      transformation_icp, information_icp, rmse, fitness = pairwise_registration(
-        self.pcd_esitimated[source_id], self.pcd_esitimated[0],
-        self.max_correspondence_distance_coarse,
-        self.max_correspondence_distance_fine)
+                                                     target_id,
+                                                     transformation_icp,
+                                                     information_icp,
+                                                     uncertain=True))
+      if pc_num > self.start_detect_loop_idx:
+        start_id = max(pc_num-self.start_detect_loop_idx - self.detect_loop_extend, 0)
+        end_id = min(pc_num-self.start_detect_loop_idx + self.detect_loop_extend+1, pc_num)
+        need_GO = False
+        for target_id in range(start_id, end_id):
+          transformation_icp, information_icp, rmse, fitness = pairwise_registration(
+            self.pcd_esitimated[source_id], self.pcd_esitimated[target_id],
+            self.max_correspondence_distance_coarse,
+            self.max_correspondence_distance_fine)
 
-      if fitness < self.fit_bar:
-        self.closed_loop = True
-        self.pose_graph.edges.append(
-          o3d.pipelines.registration.PoseGraphEdge(source_id,
-                                                  0,
-                                                  transformation_icp,
-                                                  information_icp,
-                                                  uncertain=True))
-        option = o3d.pipelines.registration.GlobalOptimizationOption(
-          max_correspondence_distance=self.max_correspondence_distance_fine,
-          edge_prune_threshold=0.25,
-          reference_node=0)
-        o3d.pipelines.registration.global_optimization(
-          self.pose_graph,
-          o3d.pipelines.registration.GlobalOptimizationLevenbergMarquardt(),
-          o3d.pipelines.registration.GlobalOptimizationConvergenceCriteria(),
-          option)
-      
+          if fitness < self.fit_bar:
+            need_GO = True
+            self.closed_loop = True
+            self.pose_graph.edges.append(
+              o3d.pipelines.registration.PoseGraphEdge(source_id,
+                                                      target_id,
+                                                      transformation_icp,
+                                                      information_icp,
+                                                      uncertain=True))
+        if need_GO:
+          option = o3d.pipelines.registration.GlobalOptimizationOption(
+            max_correspondence_distance=self.max_correspondence_distance_fine,
+            edge_prune_threshold=0.25,
+            reference_node=0)
+          o3d.pipelines.registration.global_optimization(
+            self.pose_graph,
+            o3d.pipelines.registration.GlobalOptimizationLevenbergMarquardt(),
+            o3d.pipelines.registration.GlobalOptimizationConvergenceCriteria(),
+            option)
+
       for point_id, pc in enumerate(self.pcd_esitimated):
-        self.o3dvis.add_geometry(copy.deepcopy(pc).transform(self.pose_graph.nodes[point_id].pose))
+        self.o3dvis.add_geometry(copy.deepcopy(pc).transform(
+          self.pose_graph.nodes[point_id].pose))
       self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
       self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
       self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
       color = self.o3dvis.capture_screen_float_buffer(do_render=True)
-      rgb_array[y_start:y_start+self.sensor_y, x_start:x_start+self.sensor_x,:] = np.asarray(color)*256
+      rgb_array[y_start:y_start+self.sensor_size, x_start:x_start +
+                self.sensor_size, :] = np.asarray(color)*256
       txt = char_to_pixels(f'Estimated')
       rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
-      txt = char_to_pixels(f'rms0:{rmse:.3f}')
-      rgb_array[y_start+16:y_start+32, x_start:x_start+64, :] = txt
-      txt = char_to_pixels(f'fit0:{fitness:.3f}')
-      rgb_array[y_start+32:y_start+48, x_start:x_start+64, :] = txt
+      # txt = char_to_pixels(f'rms0:{rmse:.3f}')
+      # rgb_array[y_start+16:y_start+32, x_start:x_start+64, :] = txt
+      # txt = char_to_pixels(f'fit0:{fitness:.3f}')
+      # rgb_array[y_start+32:y_start+48, x_start:x_start+64, :] = txt
       if self.closed_loop:
         txt = char_to_pixels(f'Closed Loop')
         rgb_array[y_start+48:y_start+64, x_start:x_start+64, :] = txt
@@ -650,7 +697,7 @@ if __name__ == '__main__':
   env = RollerEnv()
   obs = env.reset()
   imgs = []
-  for _ in tqdm(range(30)):
+  for _ in tqdm(range(60)):
     # act = env.ezpolicy(obs)
     act = env.action_space.new()
     act['wrist_vel'] = 0.
