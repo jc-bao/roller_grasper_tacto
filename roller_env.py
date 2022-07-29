@@ -251,7 +251,9 @@ class RollerEnv(gym.Env):
     self.obj = px.Body(urdf_path=obj_urdf,
                        base_position=[0.000, 0, 0.11], global_scaling=1)
     self.obj_copy = px.Body(urdf_path=obj_urdf,
-                            base_position=[0.0, 0.2, 0.13], global_scaling=1, use_fixed_base=True)
+                            base_position=[0.0, 0.15, 0.13], global_scaling=1, use_fixed_base=True)
+    self.obj_target = px.Body(urdf_path=obj_urdf,
+                            base_position=[0.0, -0.15, 0.13], global_scaling=1, use_fixed_base=True)
     self.ghost_obj = px.Body(urdf_path='assets/objects/rounded_cube_ghost.urdf',
                              base_position=[0.000, 0, 0.18], global_scaling=1, use_fixed_base=True)
     self.sensor = tacto.Sensor(
@@ -342,6 +344,9 @@ class RollerEnv(gym.Env):
     self.odometry = np.identity(4)
     self.pose_graph.nodes.append(
       o3d.pipelines.registration.PoseGraphNode(self.odometry))
+    p.stepSimulation()
+    # setup initial point cloud
+    
     return self.obs
 
   def render(self, mode="human"):
@@ -698,14 +703,14 @@ def main(obj_urdf:str = '/juno/u/chaoyi/rl/egad/data/egad_eval_set/processed_mes
   env = RollerEnv(obj_urdf=obj_urdf)
   obs = env.reset()
   imgs = []
-  for _ in tqdm(range(6)):
+  for _ in tqdm(range(120)):
     # act = env.ezpolicy(obs)
     act = env.action_space.new()
     act['wrist_vel'] = 0.
     act['pitch_l_vel'] = 0.
     act['pitch_r_vel'] = 0.
-    act['roll_l_vel'] = 0.3
-    act['roll_r_vel'] = 0.3
+    act['roll_l_vel'] = 1
+    act['roll_r_vel'] = 1
     obs, rew, done, info = env.step(act)
     imgs.append(env.render(mode='rgb_array'))
     if done:
