@@ -694,18 +694,18 @@ register(
   id="roller-v0", entry_point="roller_env:RollerEnv",
 )
 
-def main(obj_urdf:str = 'assets/objects/curved_cube.urdf', file_name:str = 'render'):
+def main(obj_urdf:str = '/juno/u/chaoyi/rl/egad/data/egad_eval_set/processed_meshes/egda.urdf', file_name:str = 'render'):
   env = RollerEnv(obj_urdf=obj_urdf)
   obs = env.reset()
   imgs = []
-  for _ in tqdm(range(120)):
+  for _ in tqdm(range(6)):
     # act = env.ezpolicy(obs)
     act = env.action_space.new()
     act['wrist_vel'] = 0.
     act['pitch_l_vel'] = 0.
     act['pitch_r_vel'] = 0.
-    act['roll_l_vel'] = 1.
-    act['roll_r_vel'] = 1.
+    act['roll_l_vel'] = 0.3
+    act['roll_r_vel'] = 0.3
     obs, rew, done, info = env.step(act)
     imgs.append(env.render(mode='rgb_array'))
     if done:
