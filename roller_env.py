@@ -1,15 +1,10 @@
 import copy
-import enum
-import logging
-import functools
 import numpy as np
 import pybullet as p
 import tacto
 import pybulletX as px
-from pybulletX.utils.space_dict import SpaceDict
 from attrdict import AttrMap
 import gym
-from gym import spaces
 from gym.envs.registration import register
 from scipy.spatial.transform import Rotation as R
 import skvideo.io
@@ -17,264 +12,82 @@ from tqdm import tqdm
 from PIL import Image
 import open3d as o3d
 from scipy.spatial.transform import Rotation as R
-import dcargs
+import hydra
+from attrdict import AttrDict
+import os, sys
 
-from utils import Camera, convert_obs_to_obs_space, unifrom_sample_quaternion, char_to_pixels, pairwise_registration
-
-log = logging.getLogger(__name__)
-
-
-class RollerGrapser(px.Robot):
-  wrist_vel = 1
-  pitch_vel = 1
-  roll_vel = 1
-  wrist_joint_name = "wrist"
-  gripper_names = [
-    "joint1_left",
-    "joint1_right",
-  ]
-  pitch_names = [
-    'joint3_left',
-    'joint3_right'
-  ]
-  roll_names = [
-    'joint4_left',
-    'joint4_right'
-  ]
-  digit_joint_names = ["joint5_left", "joint5_right"]
-
-  MAX_FORCES = 200
-
-  def __init__(self, robot_params, init_state):
-    super().__init__(**robot_params)
-
-    self.zero_pose = self._states_to_joint_position(init_state)
-    self.reset()
-
-  @property
-  @functools.lru_cache(maxsize=None)
-  def state_space(self):
-    return SpaceDict(
-      {
-        "wrist_angle": spaces.Box(
-          low=-np.pi, high=np.pi, shape=(1,), dtype=np.float32
-        ),
-        "finger_l": spaces.Box(
-          low=0, high=0.1, shape=(1,), dtype=np.float32
-        ),
-        "finger_r": spaces.Box(
-          low=0, high=0.1, shape=(1,), dtype=np.float32
-        ),
-        "pitch_l_angle": spaces.Box(
-          low=-np.pi, high=np.pi, shape=(1,), dtype=np.float32
-        ),
-        "pitch_r_angle": spaces.Box(
-          low=-np.pi, high=np.pi, shape=(1,), dtype=np.float32
-        ),
-        "roll_l_angle": spaces.Box(
-          low=-np.pi, high=np.pi, shape=(1,), dtype=np.float32
-        ),
-        "roll_r_angle": spaces.Box(
-          low=-np.pi, high=np.pi, shape=(1,), dtype=np.float32
-        ),
-      }
-    )
-
-  @property
-  @functools.lru_cache(maxsize=None)
-  def action_space(self):
-    return SpaceDict(
-      {
-        "wrist_vel": spaces.Box(
-          low=-1, high=1, shape=(1,), dtype=np.float32
-        ),
-        "pitch_l_vel": spaces.Box(
-          low=-1, high=1, shape=(1,), dtype=np.float32
-        ),
-        "pitch_r_vel": spaces.Box(
-          low=-1, high=1, shape=(1,), dtype=np.float32
-        ),
-        "roll_l_vel": spaces.Box(
-          low=-1, high=1, shape=(1,), dtype=np.float32
-        ),
-        "roll_r_vel": spaces.Box(
-          low=-1, high=1, shape=(1,), dtype=np.float32
-        ),
-      }
-    )
-
-  def get_states(self):
-    wrist_joint = self.get_joint_states()[self.wrist_joint_id]
-    finger_l = self.get_joint_states()[self.gripper_joint_ids[0]]
-    finger_r = self.get_joint_states()[self.gripper_joint_ids[1]]
-    pitch_l = self.get_joint_states()[self.pitch_joint_ids[0]]
-    pitch_r = self.get_joint_states()[self.pitch_joint_ids[1]]
-    roll_l = self.get_joint_states()[self.roll_joint_ids[0]]
-    roll_r = self.get_joint_states()[self.roll_joint_ids[1]]
-
-    states = self.state_space.new()
-    # TODO convert to euler
-    states.wrist_angle = wrist_joint.joint_position
-    states.finger_l = finger_l.joint_position
-    states.finger_r = finger_r.joint_position
-    states.pitch_l_angle = pitch_l.joint_position
-    states.pitch_r_angle = pitch_r.joint_position
-    states.roll_l_angle = roll_l.joint_position
-    states.roll_r_angle = roll_r.joint_position
-    return states
-
-  def _states_to_joint_position(self, states):
-    joint_position = np.zeros(self.num_dofs)
-    joint_position[self.wrist_joint_id] = states.wrist_angle
-    joint_position[self.gripper_joint_ids[0]] = states.finger_l
-    joint_position[self.gripper_joint_ids[1]] = states.finger_r
-    joint_position[self.pitch_joint_ids[0]] = states.pitch_l_angle
-    joint_position[self.pitch_joint_ids[1]] = states.pitch_r_angle
-    joint_position[self.roll_joint_ids[0]] = states.roll_l_angle
-    joint_position[self.roll_joint_ids[1]] = states.roll_r_angle
-    return joint_position
-
-  def set_actions(self, actions):
-    actions = AttrMap(actions)
-    states = self.get_states()
-    # action is the desired state, overwrite states with actions to get it
-    states.wrist_angle += (actions.wrist_vel * self.wrist_vel)
-    states.finger_l = 0.00
-    states.finger_r = 0.00
-    states.pitch_l_angle += (actions.pitch_l_vel * self.pitch_vel)
-    states.pitch_r_angle += (actions.pitch_r_vel * self.pitch_vel)
-    states.roll_l_angle += (actions.roll_l_vel * self.roll_vel)
-    states.roll_r_angle += (actions.roll_r_vel * self.roll_vel)
-    joint_position = self._states_to_joint_position(states)
-    max_forces = np.ones(self.num_dofs) * self.MAX_FORCES
-    max_forces[self.gripper_joint_ids] *= 1
-    max_forces[self.pitch_joint_ids] *= 100
-    max_forces[self.roll_joint_ids] *= 100
-    self.set_joint_position(
-      joint_position, max_forces, use_joint_effort_limits=False
-    )
-
-  @property
-  def digit_links(self):
-    return [self.get_joint_index_by_name(name) for name in self.digit_joint_names]
-
-  @property
-  @functools.lru_cache(maxsize=None)
-  def wrist_joint_id(self):
-    return self.free_joint_indices.index(self.get_joint_index_by_name(self.wrist_joint_name))
-
-  @property
-  @functools.lru_cache(maxsize=None)
-  def gripper_joint_ids(self):
-    return [
-      self.free_joint_indices.index(self.get_joint_index_by_name(name))
-      for name in self.gripper_names
-    ]
-
-  @property
-  @functools.lru_cache(maxsize=None)
-  def pitch_joint_ids(self):
-    return [
-      self.free_joint_indices.index(self.get_joint_index_by_name(name))
-      for name in self.pitch_names
-    ]
-
-  @property
-  @functools.lru_cache(maxsize=None)
-  def roll_joint_ids(self):
-    return [
-      self.free_joint_indices.index(self.get_joint_index_by_name(name))
-      for name in self.roll_names
-    ]
+from utils import RollerGrapser, Camera, convert_obs_to_obs_space, unifrom_sample_quaternion, char_to_pixels, pairwise_registration
 
 
 class RollerEnv(gym.Env):
-  reward_per_step = -0.01
+  def __init__(self, cfg: AttrDict):
+    # configuration
+    self.cfg = self.update_params(cfg)
+    sys.path.append(hydra.utils.get_original_cwd())
 
-  def __init__(self, obj_urdf = 'assets/objects/curved_cube.urdf'):
+    # physical engine
     self._p = px.init(mode=p.DIRECT)
-    # p.configureDebugVisualizer(p.COV_ENABLE_GUI, False)
-    # p.resetDebugVisualizerCamera(
-    #   cameraDistance=0.2, cameraYaw=90, cameraPitch=-20, cameraTargetPosition=[0.0, 0, 0.1])
-    # p.setRealTimeSimulation(False)
-
-    # render parameters
-    self.window_x, self.window_y = 1024, 512
-    self.sensor_x, self.sensor_y = 256, 64
-    self.sensor_size = max(self.sensor_x, self.sensor_y)
-    self.sensor_x_start = (self.sensor_size - self.sensor_x)//2
-    self.sensor_x_end = (self.sensor_size + self.sensor_x)//2
-    self.sensor_y_start = (self.sensor_size - self.sensor_y)//2
-    self.sensor_y_end = (self.sensor_size + self.sensor_y)//2
-    
-    self.sensor_near, self.sensor_far = 0.001, 0.08
-    self.depth_cam_min_distance = 0.03
-    self.pinhole_camera_intrinsic = o3d.camera.PinholeCameraIntrinsic(self.sensor_x, self.sensor_y,
-                                                                      self.sensor_size/2, self.sensor_size/2, self.sensor_x/2, self.sensor_y/2)
-
-    # SLAM params
-    self.matching_num = 5
-    self.voxel_size = 0.00002
-    self.fit_bar = 0.01  # fitness bar to conduct graph optimization
-    self.max_correspondence_distance_coarse = self.voxel_size * 15
-    self.max_correspondence_distance_fine = self.voxel_size * 1.5
-    self.start_detect_loop_idx = 38
-    self.detect_loop_extend = 15*8
-    self.use_pcd_goal = False
-    self.pcd_goal = None
+    self.robot = RollerGrapser(self.cfg.robot_params, self.cfg.init_state)
+    self.obj = px.Body(urdf_path=self.cfg.obj_urdf,
+                      base_position=[0.000, 0, 0.13], global_scaling=1)
+    self.obj_copy = px.Body(urdf_path=self.cfg.obj_urdf,
+                          base_position=[0.0, 0.15, 0.13], global_scaling=1, use_fixed_base=True)
+    self.obj_target = px.Body(urdf_path=self.cfg.obj_urdf,
+                            base_position=[0.0, -0.15, 0.13], global_scaling=1, use_fixed_base=True)
+    self.sensor = tacto.Sensor(
+      width=self.cfg.sensor_x/2, height=self.cfg.sensor_y/2, visualize_gui=False, config_path='/juno/u/chaoyi/rl/roller_grasper_tacto/assets/sensors/roller.yml')
+    self.world_cam = Camera(self.cfg.cam.world_cam)
+    self.left_cam = Camera(self.cfg.cam.left_cam)
+    self.right_cam = Camera(self.cfg.cam.right_cam)
 
     # create o3d render window
-    self.o3dvis = o3d.visualization.Visualizer()
-    self.o3dvis.create_window(
-      width=self.sensor_size, height=self.sensor_size, visible=False)
-    self.world_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
-      size=0.05)
-    self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
-    self.o3dvis.get_view_control().set_front(np.array([1, 1, 1]))
-    self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
-    self.o3dvis.get_render_option().background_color = (0.5, 0.5, 0.5)
+    self.o3dvis = self.init_o3d_render()
+    self.world_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05)
 
-    # robot parameters
-    robot_params = {
-      'urdf_path': 'assets/robots/roller.urdf',
-      'use_fixed_base': True,
-      'base_position': [0, 0, 0.3],
-    }
-    init_state = AttrMap({
-      'wrist_angle': 0,
-      'finger_l': -0.008,
-      'finger_r': +0.008,
-      'pitch_l_angle': 0,
-      'pitch_r_angle': 0,
-      'roll_l_angle': 0,
-      'roll_r_angle': 0,
-    })
-    self.robot = RollerGrapser(robot_params, init_state)
-    self.obj = px.Body(urdf_path=obj_urdf,
-                       base_position=[0.000, 0, 0.13], global_scaling=1)
-    self.obj_copy = px.Body(urdf_path=obj_urdf,
-                            base_position=[0.0, 0.15, 0.13], global_scaling=1, use_fixed_base=True)
-    self.obj_target = px.Body(urdf_path=obj_urdf,
-                            base_position=[0.0, -0.15, 0.13], global_scaling=1, use_fixed_base=True)
-    self.ghost_obj = px.Body(urdf_path='assets/objects/rounded_cube_ghost.urdf',
-                             base_position=[0.000, 0, 0.18], global_scaling=1, use_fixed_base=True)
-    self.sensor = tacto.Sensor(
-      width=self.sensor_x/2, height=self.sensor_y/2, visualize_gui=False, config_path='assets/sensors/roller.yml')
-    self.camera = Camera()
-    self.viewer = None
-    self.sensor.add_camera(self.robot.id, self.robot.digit_links)
-    self.sensor.add_body(self.obj)
     self.reset()
+
+  def update_params(self, cfg: AttrDict):
+    # render params
+    cfg.sensor_size = max(cfg.sensor_x, cfg.sensor_y)
+    cfg.sensor_x_start = (cfg.sensor_size - cfg.sensor_x)//2
+    cfg.sensor_x_end = (cfg.sensor_size + cfg.sensor_x)//2
+    cfg.sensor_y_start = (cfg.sensor_size - cfg.sensor_y)//2
+    cfg.sensor_y_end = (cfg.sensor_size + cfg.sensor_y)//2
+    cfg.pinhole_camera_intrinsic = o3d.camera.PinholeCameraIntrinsic(cfg.sensor_x, cfg.sensor_y,
+                                                                     cfg.sensor_size/2, cfg.sensor_size/2, cfg.sensor_x/2, cfg.sensor_y/2)
+    for k, cam in cfg.cam.items():
+      if cam.width is None:
+        cfg['cam'][k]['width'] = cfg.render_x
+      if cam.height is None:
+        cfg['cam'][k]['height'] = cfg.render_y
+
+    # SLAM params
+    cfg.max_correspondence_distance_coarse = cfg.voxel_size * 15
+    cfg.max_correspondence_distance_fine = cfg.voxel_size * 1.5
+    return cfg
+
+  def init_o3d_render(self):
+    o3dvis = o3d.visualization.Visualizer()
+    o3dvis.create_window(
+      width=self.cfg.render_x, height=self.cfg.render_y, visible=False)
+    o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
+    o3dvis.get_view_control().set_front(np.array([1, 1, 1]))
+    o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
+    o3dvis.get_render_option().background_color = (0.5, 0.5, 0.5)
+    return o3dvis
 
   def step(self, action):
     self.steps += 1
     done = self._done()
-    reward = self.reward_per_step + int(done)
+    reward = int(done)
     info = {}
     self.robot.set_actions(action)
+
+    # update ghost object position
     self.obj_copy.set_base_pose(
       np.asarray(self.obj_copy.init_base_position)-np.asarray(self.obj.init_base_position) + np.asarray(self.obj.get_base_pose()[0]), self.obj.get_base_pose()[1])
 
+    # update object position esitimation
     new_roll = self.robot.get_joint_state_by_name('joint4_left').joint_position
     delta_roll = new_roll - self.old_roll
     self.old_roll = new_roll
@@ -283,14 +96,19 @@ class RollerEnv(gym.Env):
     delta_obj_roll = delta_roll*0.04/roller_width
     self.obj_relative_angle += delta_obj_roll
 
-    self.obj_angle = R.from_quat(self.obj.get_base_pose()[1]).as_euler('xyz')[0]
+    # update camera position with the roller
+    self.obj_angle = R.from_quat(
+      self.obj.get_base_pose()[1]).as_euler('xyz')[0]
     angle_to_vertial_axis = (self.obj_angle+np.pi/4) % (np.pi/2) - np.pi/4
-    self.depth_cam_distance = self.depth_cam_min_distance / \
+    self.depth_cam_distance = self.cfg.depth_cam_min_distance / \
       abs(np.cos(angle_to_vertial_axis))
+
+    # using object current orientation to record if do the loop closure 
     if abs(self.obj_angle - np.pi) < np.pi/12 and ~self.closed_loop:
-      self.start_detect_loop_idx = len(self.pcd_esitimated)
+      self.cfg.start_detect_loop_idx = len(self.pcd_esitimated)
 
     p.stepSimulation()
+
     self.obs = self._get_obs()
     return self.obs, reward, done, info
 
@@ -298,14 +116,18 @@ class RollerEnv(gym.Env):
     return (self.steps % 100 == 0)
 
   def _get_obs(self):
-    cam_color, cam_depth = self.camera.get_image()
+    world_cam_color, world_cam_depth = self.world_cam.get_image()
+    left_cam_color, left_cam_depth = self.left_cam.get_image()
+    right_cam_color, right_cam_depth = self.right_cam.get_image()
     # update objects positions registered with sensor
     self.sensor.update()
     colors, depths = self.sensor.render()
     obj_pose = self.obj.get_base_pose()
-    return AttrMap(
+    return AttrDict(
       {
-        "camera": {"color": cam_color, "depth": cam_depth},
+        "world_cam": {"color": world_cam_color, "depth": world_cam_depth},
+        "left_cam": {"color": left_cam_color, "depth": left_cam_depth}, 
+        "right_cam": {"color": right_cam_color, "depth": right_cam_depth}, 
         "sensor": [
           {"color": color, "depth": depth}
           for color, depth in zip(colors, depths)
@@ -325,7 +147,6 @@ class RollerEnv(gym.Env):
     self.robot.reset()
     # sample goal
     self.goal = unifrom_sample_quaternion()
-    self.ghost_obj.set_base_pose(self.ghost_obj.init_base_position, self.goal)
     # Move the object to random location
     dx, dy = np.random.randn(2) * 0.0
     x, y, z = self.obj.init_base_position
@@ -334,7 +155,7 @@ class RollerEnv(gym.Env):
     obj_orn = [0, 0, 0, 1]
     self.obj.set_base_pose(position, obj_orn)
     # setup camera
-    self.depth_cam_distance = self.depth_cam_min_distance
+    self.depth_cam_distance = self.cfg.depth_cam_min_distance
     # get initial observation
     self.obs = self._get_obs()
     self.pcd_esitimated, self.pcd_real, self.pcds = [], [], []
@@ -351,18 +172,18 @@ class RollerEnv(gym.Env):
     # setup initial point cloud
 
     view_matrix = p.computeViewMatrixFromYawPitchRoll(
-      cameraTargetPosition= np.asarray(self.obj_target.init_base_position),
+      cameraTargetPosition=np.asarray(self.obj_target.init_base_position),
       distance=self.depth_cam_distance,
       yaw=180,
       pitch=0,
       roll=0,
       upAxisIndex=2)
-    sensor_far = self.sensor_far*1
+    sensor_far = self.cfg.sensor_far*1
     proj_matrix = p.computeProjectionMatrixFOV(
-      fov=90, aspect=float(self.sensor_size)/self.sensor_size,
-      nearVal=self.sensor_near, farVal=sensor_far)
+      fov=90, aspect=float(self.cfg.sensor_size)/self.cfg.sensor_size,
+      nearVal=self.cfg.sensor_near, farVal=sensor_far)
     width, height, rgbImg, depthImg, segImg = p.getCameraImage(
-      width=self.sensor_size, height=self.sensor_size, viewMatrix=view_matrix,
+      width=self.cfg.sensor_size, height=self.cfg.sensor_size, viewMatrix=view_matrix,
       projectionMatrix=proj_matrix,
       renderer=p.ER_BULLET_HARDWARE_OPENGL
     )
@@ -371,16 +192,16 @@ class RollerEnv(gym.Env):
     # point cloud data
     rgbImg = Image.fromarray(rgbImg, mode='RGBA').convert('RGB')
     color = o3d.geometry.Image(np.array(rgbImg))
-    depth = sensor_far * self.sensor_near / \
-      (sensor_far - (sensor_far - self.sensor_near) * depthImg)
+    depth = sensor_far * self.cfg.sensor_near / \
+      (sensor_far - (sensor_far - self.cfg.sensor_near) * depthImg)
     depthImg = depth/sensor_far
     depthImg[depthImg > 0.98] = 0
-    
+
     depth = o3d.geometry.Image((depthImg*255).astype(np.uint8))
     rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
       color, depth, depth_scale=1/sensor_far, depth_trunc=1000, convert_rgb_to_intensity=False)
     pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
-      rgbd, self.pinhole_camera_intrinsic)
+      rgbd, self.cfg.pinhole_camera_intrinsic)
     # transformation information
     cam2worldTrans = np.array([
       [-1, 0, 0, 0],
@@ -400,7 +221,7 @@ class RollerEnv(gym.Env):
     pcd_real = copy.deepcopy(pcd)
     pcd_real.transform(real_world2objTrans)
     pcd_real = pcd_real.voxel_down_sample(
-          voxel_size=self.voxel_size)
+      voxel_size=self.cfg.voxel_size)
     pcd_real.estimate_normals(
       search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
     self.pcd_goal = pcd_real
@@ -413,11 +234,8 @@ class RollerEnv(gym.Env):
       depth = [digit.depth for digit in self.obs.sensor]
       self.sensor.updateGUI(color, depth)
     elif mode == "rgb_array":
-      rgb_array = np.ones((1024, 1024, 3), dtype=np.uint8)
-
+      rgb_array = np.ones((2048, 2048, 3)).astype(np.uint8)
       # frame data
-      self.window_x = 1024
-      self.window_y = 256
       view_matrix = p.computeViewMatrixFromYawPitchRoll(
         cameraTargetPosition=[0, 0, 0.1],
         distance=0.2,
@@ -426,14 +244,15 @@ class RollerEnv(gym.Env):
         roll=0,
         upAxisIndex=2)
       proj_matrix = p.computeProjectionMatrixFOV(
-        fov=60, aspect=float(self.window_x)/self.window_y,
+        fov=60, aspect=float(self.cfg.render_x)/self.cfg.render_y,
         nearVal=0.1, farVal=100.0)
       (_, _, px, _, _) = p.getCameraImage(
-        width=self.window_x, height=self.window_y, viewMatrix=view_matrix,
+        width=self.cfg.render_x, height=self.cfg.render_y, viewMatrix=view_matrix,
         projectionMatrix=proj_matrix,
         renderer=p.ER_BULLET_HARDWARE_OPENGL
       )
-      rgb_array[:self.window_y, :self.window_x, :] = np.array(px)[..., :3]
+      rgb_array[:self.cfg.render_y,
+                :self.cfg.render_x, :] = np.array(px)[..., :3]
 
       # sensor data
       for i in range(len(self.obs.sensor)):
@@ -450,7 +269,7 @@ class RollerEnv(gym.Env):
       pcd_real_combined = o3d.geometry.PointCloud()
       pcd_esitimated_combined = o3d.geometry.PointCloud()
       for cam_id in range(1, 3):
-        y_start, x_start = self.sensor_size*cam_id, 0
+        y_start, x_start = self.cfg.sensor_size*cam_id, 0
         # depth data
         view_matrix = p.computeViewMatrixFromYawPitchRoll(
           cameraTargetPosition=self.obj_copy.init_base_position,
@@ -460,33 +279,35 @@ class RollerEnv(gym.Env):
           roll=0,
           upAxisIndex=2)
         proj_matrix = p.computeProjectionMatrixFOV(
-          fov=90, aspect=float(self.sensor_x)/self.sensor_y,
-          nearVal=self.sensor_near, farVal=self.sensor_far)
+          fov=90, aspect=float(self.cfg.sensor_x)/self.cfg.sensor_y,
+          nearVal=self.cfg.sensor_near, farVal=self.cfg.sensor_far)
         width, height, rgbImg, depthImg, segImg = p.getCameraImage(
-          width=self.sensor_size, height=self.sensor_size, viewMatrix=view_matrix,
+          width=self.cfg.sensor_size, height=self.cfg.sensor_size, viewMatrix=view_matrix,
           projectionMatrix=proj_matrix,
           renderer=p.ER_BULLET_HARDWARE_OPENGL
         )
-        rgbImg = np.asarray(rgbImg)[self.sensor_y_start:self.sensor_y_end, self.sensor_x_start:self.sensor_x_end]
-        depthImg = np.asarray(depthImg)[self.sensor_y_start:self.sensor_y_end, self.sensor_x_start:self.sensor_x_end]
-        rgb_array[y_start:y_start+self.sensor_y, x_start:x_start +
-                  self.sensor_x, :] = np.expand_dims(depthImg*256, 2).repeat(3, axis=2)
+        rgbImg = np.asarray(rgbImg)[
+          self.cfg.sensor_y_start:self.cfg.sensor_y_end, self.cfg.sensor_x_start:self.cfg.sensor_x_end]
+        depthImg = np.asarray(depthImg)[
+          self.cfg.sensor_y_start:self.cfg.sensor_y_end, self.cfg.sensor_x_start:self.cfg.sensor_x_end]
+        rgb_array[y_start:y_start+self.cfg.sensor_y, x_start:x_start +
+                  self.cfg.sensor_x, :] = np.expand_dims(depthImg*256, 2).repeat(3, axis=2)
         txt = char_to_pixels(f'depth{cam_id}')
         rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
-        x_start += self.sensor_x
+        x_start += self.cfg.sensor_x
 
         # point cloud data
         rgbImg = Image.fromarray(rgbImg, mode='RGBA').convert('RGB')
         color = o3d.geometry.Image(np.array(rgbImg))
-        depth = self.sensor_far * self.sensor_near / \
-          (self.sensor_far - (self.sensor_far - self.sensor_near) * depthImg)
-        depthImg = depth/self.sensor_far
+        depth = self.cfg.sensor_far * self.cfg.sensor_near / \
+          (self.cfg.sensor_far - (self.cfg.sensor_far - self.cfg.sensor_near) * depthImg)
+        depthImg = depth/self.cfg.sensor_far
         depthImg[depthImg > 0.98] = 0
         depth = o3d.geometry.Image((depthImg*255).astype(np.uint8))
         rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
-          color, depth, depth_scale=1/self.sensor_far, depth_trunc=1000, convert_rgb_to_intensity=False)
+          color, depth, depth_scale=1/self.cfg.sensor_far, depth_trunc=1000, convert_rgb_to_intensity=False)
         pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
-          rgbd, self.pinhole_camera_intrinsic)
+          rgbd, self.cfg.pinhole_camera_intrinsic)
 
         # transformation information
         if cam_id == 2:
@@ -531,12 +352,12 @@ class RollerEnv(gym.Env):
         self.o3dvis.get_view_control().set_front(np.array([0, 0, -1]))
         self.o3dvis.get_view_control().set_up(np.array([0, -1, 0]))
         color = self.o3dvis.capture_screen_float_buffer(do_render=True)
-        rgb_array[y_start:y_start+self.sensor_size,
-                  x_start:x_start+self.sensor_size, :] = np.asarray(color)*256
+        rgb_array[y_start:y_start+self.cfg.render_x,
+                  x_start:x_start+self.cfg.render_y, :] = np.asarray(color)*256
         txt = char_to_pixels(f'PC{cam_id} in cam')
         rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
         self.o3dvis.clear_geometries()
-        x_start += self.sensor_size
+        x_start += self.cfg.sensor_size
 
         # draw point cloud in world frame
         self.o3dvis.add_geometry(self.world_frame)
@@ -546,12 +367,12 @@ class RollerEnv(gym.Env):
         self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
         self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
         color = self.o3dvis.capture_screen_float_buffer(do_render=True)
-        rgb_array[y_start:y_start+self.sensor_size,
-                  x_start:x_start+self.sensor_size, :] = np.asarray(color)*256
+        rgb_array[y_start:y_start+self.cfg.render_x,
+                  x_start:x_start+self.cfg.render_y, :] = np.asarray(color)*256
         txt = char_to_pixels(f'PC{cam_id} in world')
         rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
         self.o3dvis.clear_geometries()
-        x_start += self.sensor_x
+        x_start += self.cfg.sensor_x
 
         # draw object in object frame (for reconstruction)
         pcd_real = copy.deepcopy(pcd)
@@ -571,18 +392,18 @@ class RollerEnv(gym.Env):
         self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
         self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
         color = self.o3dvis.capture_screen_float_buffer(do_render=True)
-        rgb_array[y_start:y_start+self.sensor_size,
-                  x_start:x_start+self.sensor_size, :] = np.asarray(color)*256
+        rgb_array[y_start:y_start+self.cfg.render_x,
+                  x_start:x_start+self.cfg.render_y, :] = np.asarray(color)*256
         txt = char_to_pixels(f'PC{cam_id} in obj')
         rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
         self.o3dvis.clear_geometries()
-        x_start += self.sensor_x
-        pcd_real_down = pcd_real.voxel_down_sample(voxel_size=self.voxel_size)
+        x_start += self.cfg.sensor_x
+        pcd_real_down = pcd_real.voxel_down_sample(voxel_size=self.cfg.voxel_size)
         pcd_real_combined += pcd_real_down
         pcd_esitimated_down = pcd_esitimated.voxel_down_sample(
-          voxel_size=self.voxel_size)
+          voxel_size=self.cfg.voxel_size)
         pcd_esitimated_combined += pcd_esitimated_down
-        pcd_combined += pcd.voxel_down_sample(voxel_size=self.voxel_size)
+        pcd_combined += pcd.voxel_down_sample(voxel_size=self.cfg.voxel_size)
       pcd_esitimated_combined.estimate_normals(
         search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
       pcd_combined.estimate_normals(
@@ -592,7 +413,7 @@ class RollerEnv(gym.Env):
       self.pcds.append(pcd_combined)
 
       # draw ground truth
-      y_start, x_start = self.sensor_size*3, 0
+      y_start, x_start = self.cfg.sensor_size*3, 0
       self.o3dvis.add_geometry(copy.deepcopy(
         self.world_frame).transform(real_world2objTrans))
       for pc in self.pcd_real:
@@ -601,30 +422,30 @@ class RollerEnv(gym.Env):
       self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
       self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
       color = self.o3dvis.capture_screen_float_buffer(do_render=True)
-      rgb_array[y_start:y_start+self.sensor_size, x_start:x_start +
-                self.sensor_size, :] = np.asarray(color)*256
+      rgb_array[y_start:y_start+self.cfg.render_x, x_start:x_start +
+                self.cfg.render_y, :] = np.asarray(color)*256
       txt = char_to_pixels(f'Ground truth')
       rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
       self.o3dvis.clear_geometries()
-      x_start += self.sensor_x
+      x_start += self.cfg.sensor_x
 
       # aling with ICP
-      y_start, x_start = self.sensor_size*3, self.sensor_size
+      y_start, x_start = self.cfg.sensor_size*3, self.cfg.sensor_size
       self.o3dvis.add_geometry(copy.deepcopy(
         self.world_frame).transform(real_world2objTrans))
       # update pose graph
       pc_num = len(self.pcd_esitimated)
-      if pc_num == 1 and self.use_pcd_goal:
+      if pc_num == 1 and self.cfg.use_pcd_goal:
         self.pcd_real.append(self.pcd_goal)
         self.pcd_esitimated.append(self.pcd_goal)
         pc_num += 1
       source_id = pc_num-1
-      for i in range(0, min(pc_num-1, self.matching_num)):
+      for i in range(0, min(pc_num-1, self.cfg.matching_num)):
         target_id = pc_num-2-i
         transformation_icp, information_icp, rmse, fitness = pairwise_registration(
           self.pcd_esitimated[source_id], self.pcd_esitimated[target_id],
-          self.max_correspondence_distance_coarse,
-          self.max_correspondence_distance_fine)
+          self.cfg.max_correspondence_distance_coarse,
+          self.cfg.max_correspondence_distance_fine)
         if i == 0:  # odometry case
           self.odometry = np.dot(transformation_icp, self.odometry)
           self.pose_graph.nodes.append(
@@ -643,28 +464,30 @@ class RollerEnv(gym.Env):
                                                      transformation_icp,
                                                      information_icp,
                                                      uncertain=True))
-      if pc_num > self.start_detect_loop_idx and not self.closed_loop:
-        start_id = max(pc_num-self.start_detect_loop_idx - self.detect_loop_extend, 0)
-        end_id = min(pc_num-self.start_detect_loop_idx + self.detect_loop_extend+1, pc_num)
+      if pc_num > self.cfg.start_detect_loop_idx and not self.closed_loop:
+        start_id = max(pc_num-self.cfg.start_detect_loop_idx -
+                       self.cfg.detect_loop_extend, 0)
+        end_id = min(pc_num-self.cfg.start_detect_loop_idx +
+                     self.cfg.detect_loop_extend+1, pc_num)
         need_GO = False
         for target_id in range(start_id, end_id):
           transformation_icp, information_icp, rmse, fitness = pairwise_registration(
             self.pcd_esitimated[source_id], self.pcd_esitimated[target_id],
-            self.max_correspondence_distance_coarse,
-            self.max_correspondence_distance_fine)
+            self.cfg.max_correspondence_distance_coarse,
+            self.cfg.max_correspondence_distance_fine)
 
-          if fitness < self.fit_bar:
+          if fitness < self.cfg.fit_bar:
             need_GO = True
             self.closed_loop = True
             self.pose_graph.edges.append(
               o3d.pipelines.registration.PoseGraphEdge(source_id,
-                                                      target_id,
-                                                      transformation_icp,
-                                                      information_icp,
-                                                      uncertain=True))
+                                                       target_id,
+                                                       transformation_icp,
+                                                       information_icp,
+                                                       uncertain=True))
         if need_GO:
           option = o3d.pipelines.registration.GlobalOptimizationOption(
-            max_correspondence_distance=self.max_correspondence_distance_fine,
+            max_correspondence_distance=self.cfg.max_correspondence_distance_fine,
             edge_prune_threshold=0.25,
             reference_node=0)
           o3d.pipelines.registration.global_optimization(
@@ -680,8 +503,8 @@ class RollerEnv(gym.Env):
       self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
       self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
       color = self.o3dvis.capture_screen_float_buffer(do_render=True)
-      rgb_array[y_start:y_start+self.sensor_size, x_start:x_start +
-                self.sensor_size, :] = np.asarray(color)*256
+      rgb_array[y_start:y_start+self.cfg.render_y, x_start:x_start +
+                self.cfg.render_x, :] = np.asarray(color)*256
       txt = char_to_pixels(f'Estimated')
       rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
       txt = char_to_pixels(f'real:{self.obj_angle:.3f}')
@@ -781,11 +604,13 @@ register(
   id="roller-v0", entry_point="roller_env:RollerEnv",
 )
 
-def main(obj_urdf:str = 'assets/objects/curved_cube.urdf', file_name:str = 'render', n:int=120):
-  env = RollerEnv(obj_urdf=obj_urdf)
+@hydra.main(config_path="config", config_name="main")
+def main(cfg):
+  cfg = AttrDict(cfg)
+  env = RollerEnv(cfg)
   obs = env.reset()
   imgs = []
-  for _ in tqdm(range(n)):
+  for _ in tqdm(range(cfg.total_steps)):
     # act = env.ezpolicy(obs)
     act = env.action_space.new()
     act['wrist_vel'] = 0.
@@ -797,12 +622,12 @@ def main(obj_urdf:str = 'assets/objects/curved_cube.urdf', file_name:str = 'rend
     imgs.append(env.render(mode='rgb_array'))
     if done:
       obs = env.reset()
-  skvideo.io.vwrite(f'render/{file_name}.mp4', np.array(imgs))
+  skvideo.io.vwrite(f'{cfg.file_prefix}.mp4', np.array(imgs))
   imgs = [Image.fromarray(img) for img in imgs]
-  imgs[0].save(f"render/{file_name}.gif", save_all=True,
+  imgs[0].save(f"{cfg.file_prefix}.gif", save_all=True,
                append_images=imgs[1:], duration=50, loop=0)
   env.close()
 
 
 if __name__ == '__main__':
-  dcargs.cli(main)
+  main()

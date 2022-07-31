@@ -1,4 +1,76 @@
 # render
-window_x: 1024
-window_y: 512
-sensor_x: 
+render_item: [world, left_cam, right_cam, ground_truth, esitimated]
+render_x: 512
+render_y: 512
+sensor_x: 256
+sensor_y: 64
+cam:
+  world_cam:
+    width: null
+    height: null
+    camTargetPos: [0.5, 0, 0.05]
+    camDistance: 0.4
+    upAxisIndex: 2
+    yaw: 90
+    pitch: -30.0
+    roll: 0
+    fov: 60
+    nearPlane: 0.01
+    farPlane: 100
+  left_cam:
+    width: null
+    height: null
+    camTargetPos: [0.5, 0, 0.05]
+    camDistance: 0.4
+    upAxisIndex: 2
+    yaw: 90
+    pitch: -30.0
+    roll: 0
+    fov: 60
+    nearPlane: 0.01
+    farPlane: 100
+  right_cam:
+    width: null
+    height: null
+    camTargetPos: [0.5, 0, 0.05]
+    camDistance: 0.4
+    upAxisIndex: 2
+    yaw: 90
+    pitch: -30.0
+    roll: 0
+    fov: 60
+    nearPlane: 0.01
+    farPlane: 100
+
+# depth sensor setting
+sensor_near: 0.001
+sensor_far: 0.08
+# camera distance to the object surface
+depth_cam_min_distance: 0.03
+
+# assets
+obj_urdf: /juno/u/chaoyi/rl/roller_grasper_tacto/assets/objects/curved_cube.urdf
+robot_params:
+  urdf_path: /juno/u/chaoyi/rl/roller_grasper_tacto/assets/robots/roller.urdf
+  use_fixed_base: True
+  base_position: [0, 0, 0.3]
+init_state:
+  wrist_angle: 0
+  finger_l: -0.008
+  finger_r: +0.008
+  pitch_l_angle: 0
+  pitch_r_angle: 0
+  roll_l_angle: 0
+  roll_r_angle: 0
+
+# SLAM
+matching_num: 5
+voxel_size: 0.00002
+fit_bar: 0.01  # fitness bar to conduct graph optimization
+start_detect_loop_idx: 38
+detect_loop_extend: 15
+use_pcd_goal: False
+
+# simulation
+total_steps: 10
+file_prefix: debug

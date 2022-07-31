@@ -19,7 +19,7 @@ sensor:
     curvatureMax: 0.005  # Deformation of the gel due to convexity
     R: 0.02 # Radius of curved gel
     countW: 100 # Number of samples for horizontal direction; higher the finer details
-    mesh: "assets/sensors/hollow_cylinder.stl" # Mesh file for the gel
+    mesh: "/juno/u/chaoyi/rl/roller_grasper_tacto/assets/sensors/hollow_cylinder.stl" # Mesh file for the gel
 
   lights:
     # Light position & properties. 
