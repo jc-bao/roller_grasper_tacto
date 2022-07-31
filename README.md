@@ -69,9 +69,9 @@ pip install scipyplot deepdish tacto
     - [x] With position esitimate from roller angle
   - [x] With small camera range (2022.7.27)
   - [x] With moving camera (2022.7.27)
-- [ ] Reconstruct of different shapes (e.g. EDGA dataset)
-- [ ] Reconstruct the object from tactile sensor
+- [x] Reconstruct of different shapes (e.g. EDGA dataset) (2022.7.28)
 - [ ] Efficient way to detect close loop
+- [ ] Using ICP to matching points
 
 ### L2
 
@@ -84,6 +84,7 @@ pip install scipyplot deepdish tacto
 ### L3
 
 - [ ] Add blender to simulation
+- [ ] Reconstruct the object from tactile sensor
 
 ## Details
 

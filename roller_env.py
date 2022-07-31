@@ -337,7 +337,7 @@ class RollerEnv(gym.Env):
     self.depth_cam_distance = self.depth_cam_min_distance
     # get initial observation
     self.obs = self._get_obs()
-    self.pcd_esitimated, self.pcd_real = [], []
+    self.pcd_esitimated, self.pcd_real, self.pcds = [], [], []
     self.obj_relative_angle = 0
     self.old_roll = self.robot.get_joint_state_by_name(
       'joint5_left').joint_position
@@ -446,6 +446,7 @@ class RollerEnv(gym.Env):
         txt = char_to_pixels(f'GEL{i+1}')
         rgb_array[shape_x*i:shape_x*i+16, :64, :] = txt
 
+      pcd_combined = o3d.geometry.PointCloud()
       pcd_real_combined = o3d.geometry.PointCloud()
       pcd_esitimated_combined = o3d.geometry.PointCloud()
       for cam_id in range(1, 3):
@@ -581,10 +582,14 @@ class RollerEnv(gym.Env):
         pcd_esitimated_down = pcd_esitimated.voxel_down_sample(
           voxel_size=self.voxel_size)
         pcd_esitimated_combined += pcd_esitimated_down
+        pcd_combined += pcd.voxel_down_sample(voxel_size=self.voxel_size)
       pcd_esitimated_combined.estimate_normals(
+        search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+      pcd_combined.estimate_normals(
         search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
       self.pcd_real.append(pcd_real_combined)
       self.pcd_esitimated.append(pcd_esitimated_combined)
+      self.pcds.append(pcd_combined)
 
       # draw ground truth
       y_start, x_start = self.sensor_size*3, 0
@@ -690,7 +695,7 @@ class RollerEnv(gym.Env):
       # rgb_array[y_start+64:y_start+80, x_start:x_start+64, :] = txt
       # txt = char_to_pixels(f'odz:{odom[2]:.3f}')
       # rgb_array[y_start+80:y_start+96, x_start:x_start+64, :] = txt
-      odm = np.linalg.norm(R.from_matrix(self.odometry[:3, :3]).as_rotvec())*2
+      odm = np.linalg.norm(R.from_matrix(self.odometry[:3, :3]).as_rotvec())
       txt = char_to_pixels(f'odm:{odm:.3f}')
       rgb_array[y_start+48:y_start+64, x_start:x_start+64, :] = txt
       if self.closed_loop:
@@ -698,10 +703,10 @@ class RollerEnv(gym.Env):
         rgb_array[y_start+112:y_start+128, x_start:x_start+64, :] = txt
       self.o3dvis.clear_geometries()
 
-      if self.closed_loop:
-        self.obj_relative_angle = odm
-      else:
-        self.obj_relative_angle = 0.5*self.obj_relative_angle + 0.5*odm
+      # if self.closed_loop:
+      #   self.obj_relahtive_angle = odm
+      # else:
+      self.obj_relative_angle = 0.99*self.obj_relative_angle + 0.01*odm
 
       return rgb_array
 
@@ -776,7 +781,7 @@ register(
   id="roller-v0", entry_point="roller_env:RollerEnv",
 )
 
-def main(obj_urdf:str = '/juno/u/chaoyi/rl/egad/data/egad_eval_set/processed_meshes/egda.urdf', file_name:str = 'render', n:int=120):
+def main(obj_urdf:str = 'assets/objects/curved_cube.urdf', file_name:str = 'render', n:int=120):
   env = RollerEnv(obj_urdf=obj_urdf)
   obs = env.reset()
   imgs = []
