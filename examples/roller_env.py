@@ -1,3 +1,4 @@
+import dill
 import copy
 import numpy as np
 import pybullet as p
@@ -13,8 +14,8 @@ from PIL import Image
 import open3d as o3d
 import dcargs
 
-from roller_grasper_tacto.examples.utils import Camera, convert_obs_to_obs_space, create_o3dvis, unifrom_sample_quaternion, char_to_pixels, pairwise_registration
-from roller_grasper_tacto.examples.roller import RollerGrapser
+from utils import Camera, convert_obs_to_obs_space, create_o3dvis, unifrom_sample_quaternion, char_to_pixels, pairwise_registration
+from roller import RollerGrapser
 
 
 class RollerEnv(gym.Env):
@@ -26,9 +27,12 @@ class RollerEnv(gym.Env):
     self._p = px.init(mode=p.DIRECT)
 
     # render parameters
-    self.sensor_size: int = 512
-    self.sensor_x: int = 128
-    self.sensor_y: int = 512
+    # self.sensor_size: int = 512
+    # self.sensor_x: int = 128
+    # self.sensor_y: int = 512
+    self.sensor_size: int = 256
+    self.sensor_x: int = 256
+    self.sensor_y: int = 64
 
     # ====REMOVE
     self.sensor_x_start: int = (self.sensor_size - self.sensor_x)//2
@@ -108,6 +112,13 @@ class RollerEnv(gym.Env):
       crop = [0.2, 1]
     )
     self.reset()
+    self.data = {
+      'left_cam': list(), 
+      'right_cam': list(),
+      'obj_trans': list(), 
+      'real_delta_trans': list(),
+      'estimated_delta_trans': list()
+    }
 
   def step(self, action):
     self.steps += 1
@@ -124,8 +135,8 @@ class RollerEnv(gym.Env):
     self.old_roll = new_roll
     roller_width = self.robot.get_link_state_by_name('joint5_right')[
       0][1] - self.robot.get_link_state_by_name('joint5_left')[0][1] - 0.04
-    delta_obj_roll = delta_roll*0.04/roller_width
-    self.obj_relative_angle += delta_obj_roll
+    self.delta_obj_roll = delta_roll*0.04/roller_width
+    self.obj_relative_angle += self.delta_obj_roll
 
     self.obj_angle = R.from_quat(
       self.obj.get_base_pose()[1]).as_euler('xyz')[0]
@@ -265,38 +276,38 @@ class RollerEnv(gym.Env):
       depth = [digit.depth for digit in self.obs.sensor]
       self.sensor.updateGUI(color, depth)
     elif mode == "rgb_array":
-      # rgb_array = np.ones((1024, 1024, 3), dtype=np.uint8)
+      rgb_array = np.ones((1024, 1024, 3), dtype=np.uint8)
 
       # frame data
-      # self.window_x = 1024
-      # self.window_y = 256
-      # view_matrix = p.computeViewMatrixFromYawPitchRoll(
-      #   cameraTargetPosition=[0, 0, 0.1],
-      #   distance=0.2,
-      #   yaw=90,
-      #   pitch=-20,
-      #   roll=0,
-      #   upAxisIndex=2)
-      # proj_matrix = p.computeProjectionMatrixFOV(
-      #   fov=60, aspect=float(self.window_x)/self.window_y,
-      #   nearVal=0.1, farVal=100.0)
-      # (_, _, px, _, _) = p.getCameraImage(
-      #   width=self.window_x, height=self.window_y, viewMatrix=view_matrix,
-      #   projectionMatrix=proj_matrix,
-      #   renderer=p.ER_BULLET_HARDWARE_OPENGL
-      # )
-      # rgb_array[:self.window_y, :self.window_x, :] = np.array(px)[..., :3]
+      self.window_x = 1024
+      self.window_y = 256
+      view_matrix = p.computeViewMatrixFromYawPitchRoll(
+        cameraTargetPosition=[0, 0, 0.1],
+        distance=0.2,
+        yaw=90,
+        pitch=-20,
+        roll=0,
+        upAxisIndex=2)
+      proj_matrix = p.computeProjectionMatrixFOV(
+        fov=60, aspect=float(self.window_x)/self.window_y,
+        nearVal=0.1, farVal=100.0)
+      (_, _, px, _, _) = p.getCameraImage(
+        width=self.window_x, height=self.window_y, viewMatrix=view_matrix,
+        projectionMatrix=proj_matrix,
+        renderer=p.ER_BULLET_HARDWARE_OPENGL
+      )
+      rgb_array[:self.window_y, :self.window_x, :] = np.array(px)[..., :3]
 
       # sensor data
       for i in range(len(self.obs.sensor)):
         color = self.obs.sensor[i].color
         depth = self.obs.sensor[i].depth
         shape_x, shape_y = depth.shape[:2]
-        # rgb_array[shape_x*i:shape_x*(i+1), :shape_y, :] = color
-        # rgb_array[shape_x*i:shape_x*(i+1), shape_y:shape_y*2,
-        #           :] = np.expand_dims(depth*256, 2).repeat(3, axis=2)
-        # txt = char_to_pixels(f'GEL{i+1}')
-        # rgb_array[shape_x*i:shape_x*i+16, :64, :] = txt
+        rgb_array[shape_x*i:shape_x*(i+1), :shape_y, :] = color
+        rgb_array[shape_x*i:shape_x*(i+1), shape_y:shape_y*2,
+                  :] = np.expand_dims(depth*256, 2).repeat(3, axis=2)
+        txt = char_to_pixels(f'GEL{i+1}')
+        rgb_array[shape_x*i:shape_x*i+16, :64, :] = txt
 
       pcd_combined = o3d.geometry.PointCloud()
       pcd_real_combined = o3d.geometry.PointCloud()
@@ -319,14 +330,12 @@ class RollerEnv(gym.Env):
           projectionMatrix=proj_matrix,
           renderer=p.ER_BULLET_HARDWARE_OPENGL
         )
-        rgbImg = np.asarray(rgbImg)[
-          self.sensor_y_start:self.sensor_y_end, self.sensor_x_start:self.sensor_x_end]
-        depthImg = np.asarray(depthImg)[
-          self.sensor_y_start:self.sensor_y_end, self.sensor_x_start:self.sensor_x_end]
-        # rgb_array[y_start:y_start+self.sensor_y, x_start:x_start +
-        # self.sensor_x, :] = np.expand_dims(depthImg*256, 2).repeat(3, axis=2)
+        rgbImg = np.asarray(rgbImg)[self.sensor_y_start:self.sensor_y_end, self.sensor_x_start:self.sensor_x_end]
+        depthImg = np.asarray(depthImg)[self.sensor_y_start:self.sensor_y_end, self.sensor_x_start:self.sensor_x_end]
+        rgb_array[y_start:y_start+self.sensor_y, x_start:x_start +
+                  self.sensor_x, :] = np.expand_dims(depthImg*256, 2).repeat(3, axis=2)
         txt = char_to_pixels(f'depth{cam_id}')
-        # rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
+        rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
         x_start += self.sensor_x
 
         # point cloud data
@@ -334,13 +343,22 @@ class RollerEnv(gym.Env):
         color = o3d.geometry.Image(np.array(rgbImg))
         depth = self.sensor_far * self.sensor_near / \
           (self.sensor_far - (self.sensor_far - self.sensor_near) * depthImg)
+
+        
+        if cam_id == 1:
+          self.data['right_cam'].append(depth)
+        else:
+          self.data['left_cam'].append(depth)
+        
+
         depthImg = depth/self.sensor_far
         depthImg[depthImg > 0.98] = 0
         depth = o3d.geometry.Image((depthImg*255).astype(np.uint8))
+        depth_16 = o3d.geometry.Image((depthImg*65536).astype(np.uint16))
         rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
           color, depth, depth_scale=1/self.sensor_far, depth_trunc=1000, convert_rgb_to_intensity=False)
-        pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
-          rgbd, self.pinhole_camera_intrinsic)
+        # pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
+        #   rgbd, self.pinhole_camera_intrinsic)
 
         # transformation information
         if cam_id == 2:
@@ -358,6 +376,13 @@ class RollerEnv(gym.Env):
         else:
           raise NotImplementedError
         world2camTrans = np.linalg.inv(cam2worldTrans)
+
+        pcd = o3d.geometry.PointCloud.create_from_depth_image(
+         depth_16, self.pinhole_camera_intrinsic, depth_scale=65535/self.sensor_far, project_valid_depth_only=True) 
+        
+        pcd_world = o3d.geometry.PointCloud.create_from_depth_image(
+         depth_16, self.pinhole_camera_intrinsic, world2camTrans, depth_scale=65535/self.sensor_far, project_valid_depth_only=True) 
+        
 
         # object pose relative to camera
         real_obj2worldTrans = np.zeros((4, 4))
@@ -385,10 +410,10 @@ class RollerEnv(gym.Env):
         self.o3dvis.get_view_control().set_front(np.array([0, 0, -1]))
         self.o3dvis.get_view_control().set_up(np.array([0, -1, 0]))
         color = self.o3dvis.capture_screen_float_buffer(do_render=True)
-        # rgb_array[y_start:y_start+self.sensor_size,
-        #           x_start:x_start+self.sensor_size, :] = np.asarray(color)*256
+        rgb_array[y_start:y_start+self.sensor_size,
+                  x_start:x_start+self.sensor_size, :] = np.asarray(color)*256
         txt = char_to_pixels(f'PC{cam_id} in cam')
-        # rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
+        rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
         self.o3dvis.clear_geometries()
         x_start += self.sensor_size
 
@@ -400,10 +425,10 @@ class RollerEnv(gym.Env):
         self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
         self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
         color = self.o3dvis.capture_screen_float_buffer(do_render=True)
-        # rgb_array[y_start:y_start+self.sensor_size,
-        #           x_start:x_start+self.sensor_size, :] = np.asarray(color)*256
+        rgb_array[y_start:y_start+self.sensor_size,
+                  x_start:x_start+self.sensor_size, :] = np.asarray(color)*256
         txt = char_to_pixels(f'PC{cam_id} in world')
-        # rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
+        rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
         self.o3dvis.clear_geometries()
         x_start += self.sensor_x
 
@@ -425,10 +450,10 @@ class RollerEnv(gym.Env):
         self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
         self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
         color = self.o3dvis.capture_screen_float_buffer(do_render=True)
-        # rgb_array[y_start:y_start+self.sensor_size,
-        #           x_start:x_start+self.sensor_size, :] = np.asarray(color)*256
+        rgb_array[y_start:y_start+self.sensor_size,
+                  x_start:x_start+self.sensor_size, :] = np.asarray(color)*256
         txt = char_to_pixels(f'PC{cam_id} in obj')
-        # rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
+        rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
         self.o3dvis.clear_geometries()
         x_start += self.sensor_x
         pcd_real_down = pcd_real.voxel_down_sample(voxel_size=self.voxel_size)
@@ -455,10 +480,10 @@ class RollerEnv(gym.Env):
       self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
       self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
       color = self.o3dvis.capture_screen_float_buffer(do_render=True)
-      # rgb_array[y_start:y_start+self.sensor_size, x_start:x_start +
-      # self.sensor_size, :] = np.asarray(color)*256
+      rgb_array[y_start:y_start+self.sensor_size, x_start:x_start +
+                self.sensor_size, :] = np.asarray(color)*256
       txt = char_to_pixels(f'Ground truth')
-      # rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
+      rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
       self.o3dvis.clear_geometries()
       x_start += self.sensor_x
 
@@ -498,10 +523,8 @@ class RollerEnv(gym.Env):
                                                      information_icp,
                                                      uncertain=True))
       if pc_num > self.start_detect_loop_idx and not self.closed_loop:
-        start_id = max(pc_num-self.start_detect_loop_idx -
-                       self.detect_loop_extend, 0)
-        end_id = min(pc_num-self.start_detect_loop_idx +
-                     self.detect_loop_extend+1, pc_num)
+        start_id = max(pc_num-self.start_detect_loop_idx - self.detect_loop_extend, 0)
+        end_id = min(pc_num-self.start_detect_loop_idx + self.detect_loop_extend+1, pc_num)
         need_GO = False
         for target_id in range(start_id, end_id):
           transformation_icp, information_icp, rmse, fitness = pairwise_registration(
@@ -514,10 +537,10 @@ class RollerEnv(gym.Env):
             self.closed_loop = True
             self.pose_graph.edges.append(
               o3d.pipelines.registration.PoseGraphEdge(source_id,
-                                                       target_id,
-                                                       transformation_icp,
-                                                       information_icp,
-                                                       uncertain=True))
+                                                      target_id,
+                                                      transformation_icp,
+                                                      information_icp,
+                                                      uncertain=True))
         if need_GO:
           option = o3d.pipelines.registration.GlobalOptimizationOption(
             max_correspondence_distance=self.max_correspondence_distance_fine,
@@ -536,14 +559,14 @@ class RollerEnv(gym.Env):
       self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
       self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
       color = self.o3dvis.capture_screen_float_buffer(do_render=True)
-      # rgb_array[y_start:y_start+self.sensor_size, x_start:x_start +
-      #           self.sensor_size, :] = np.asarray(color)*256
+      rgb_array[y_start:y_start+self.sensor_size, x_start:x_start +
+                self.sensor_size, :] = np.asarray(color)*256
       txt = char_to_pixels(f'Estimated')
-      # rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
+      rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
       txt = char_to_pixels(f'real:{self.obj_angle:.3f}')
-      # rgb_array[y_start+16:y_start+32, x_start:x_start+64, :] = txt
+      rgb_array[y_start+16:y_start+32, x_start:x_start+64, :] = txt
       txt = char_to_pixels(f'est:{self.obj_relative_angle:.3f}')
-      # rgb_array[y_start+32:y_start+48, x_start:x_start+64, :] = txt
+      rgb_array[y_start+32:y_start+48, x_start:x_start+64, :] = txt
       # odom = R.from_matrix(self.odometry[:3, :3]).as_euler("xyz")
       # txt = char_to_pixels(f'odx:{odom[0]:.3f}')
       # rgb_array[y_start+48:y_start+64, x_start:x_start+64, :] = txt
@@ -553,10 +576,10 @@ class RollerEnv(gym.Env):
       # rgb_array[y_start+80:y_start+96, x_start:x_start+64, :] = txt
       odm = np.linalg.norm(R.from_matrix(self.odometry[:3, :3]).as_rotvec())
       txt = char_to_pixels(f'odm:{odm:.3f}')
-      # rgb_array[y_start+48:y_start+64, x_start:x_start+64, :] = txt
+      rgb_array[y_start+48:y_start+64, x_start:x_start+64, :] = txt
       if self.closed_loop:
         txt = char_to_pixels(f'Closed Loop')
-        # rgb_array[y_start+112:y_start+128, x_start:x_start+64, :] = txt
+        rgb_array[y_start+112:y_start+128, x_start:x_start+64, :] = txt
       self.o3dvis.clear_geometries()
 
       # if self.closed_loop:
@@ -564,9 +587,18 @@ class RollerEnv(gym.Env):
       # else:
       self.obj_relative_angle = 0.99*self.obj_relative_angle + 0.01*odm
 
-      return AttrDict(
-        sim=self.obs.camera.color
-      )
+      self.data['obj_trans'].append(real_obj2worldTrans)
+      obj_relative_orn = R.from_euler('x', self.delta_obj_roll).as_matrix()
+      obj_orn = np.eye(4)
+      obj_orn[:3,:3] = obj_relative_orn
+      self.data['estimated_delta_trans'].append(obj_orn)
+      if len(self.data['real_delta_trans']) > 1:
+        obj_real_relative_orn = np.linalg.inv(self.data['obj_trans'][-2]) @ real_obj2worldTrans
+      else:
+        obj_real_relative_orn = real_obj2worldTrans
+      self.data['real_delta_trans'].append(obj_real_relative_orn)
+
+      return rgb_array
 
   def ezpolicy(self, obs):
     # ===parse observation===
@@ -643,6 +675,7 @@ register(
 def main(obj_urdf: str = 'assets/objects/curved_cube.urdf', file_name: str = 'debug', n: int = 120):
   env = RollerEnv(obj_urdf=obj_urdf)
   obs = env.reset()
+  imgs = []
   camera_img = []
   left_cam_img = []
   right_cam_img = []
@@ -660,20 +693,35 @@ def main(obj_urdf: str = 'assets/objects/curved_cube.urdf', file_name: str = 'de
     left_cam_img.append(obs.camera_left.color)
     right_cam_img.append(obs.camera_right.color)
 
+    imgs.append(env.render(mode='rgb_array'))
+
     if done:
       obs = env.reset()
   skvideo.io.vwrite(f'render/{file_name}_camera.mp4', np.asarray(camera_img))
-  imgs = [Image.fromarray(img) for img in camera_img]
-  imgs[0].save(f"render/{file_name}_camera.gif", save_all=True,
-               append_images=imgs[1:], duration=50, loop=0)
+  imgs_camera = [Image.fromarray(img) for img in camera_img]
+  imgs_camera[0].save(f"render/{file_name}_camera.gif", save_all=True,
+               append_images=imgs_camera[1:], duration=50, loop=0)
   skvideo.io.vwrite(f'render/{file_name}_right_cam.mp4', np.asarray(left_cam_img))
-  imgs = [Image.fromarray(img) for img in left_cam_img]
-  imgs[0].save(f"render/{file_name}_right_cam.gif", save_all=True,
-               append_images=imgs[1:], duration=50, loop=0)
+  imgs_right_cam = [Image.fromarray(img) for img in left_cam_img]
+  imgs_right_cam[0].save(f"render/{file_name}_right_cam.gif", save_all=True,
+               append_images=imgs_right_cam[1:], duration=50, loop=0)
   skvideo.io.vwrite(f'render/{file_name}_left_cam.mp4', np.asarray(right_cam_img))
-  imgs = [Image.fromarray(img) for img in right_cam_img]
-  imgs[0].save(f"render/{file_name}_left_cam.gif", save_all=True,
-               append_images=imgs[1:], duration=50, loop=0)
+  imgs_left_cam = [Image.fromarray(img) for img in right_cam_img]
+  imgs_left_cam[0].save(f"render/{file_name}_left_cam.gif", save_all=True,
+               append_images=imgs_left_cam[1:], duration=50, loop=0)
+  skvideo.io.vwrite(f'render/{file_name}_left_cam.mp4', np.asarray(right_cam_img))
+  imgs_right_cam = [Image.fromarray(img) for img in right_cam_img]
+  imgs_right_cam[0].save(f"render/{file_name}_left_cam.gif", save_all=True,
+               append_images=imgs_right_cam[1:], duration=50, loop=0)
+  skvideo.io.vwrite(f'render/{file_name}_all.mp4', np.asarray(imgs))
+  imgs_all = [Image.fromarray(img) for img in imgs]
+  imgs_all[0].save(f"render/{file_name}_all.gif", save_all=True,
+               append_images=imgs_all[1:], duration=50, loop=0)
+
+
+  with open('../test/assets/data.pkl', 'wb') as f:
+    dill.dump(env.data, f)
+
   env.close()
 
 
