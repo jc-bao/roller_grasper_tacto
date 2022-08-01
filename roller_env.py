@@ -14,7 +14,6 @@ import open3d as o3d
 from scipy.spatial.transform import Rotation as R
 import hydra
 from attrdict import AttrDict
-import os, sys
 
 from utils import RollerGrapser, Camera, convert_obs_to_obs_space, unifrom_sample_quaternion, char_to_pixels, pairwise_registration
 
@@ -23,17 +22,16 @@ class RollerEnv(gym.Env):
   def __init__(self, cfg: AttrDict):
     # configuration
     self.cfg = self.update_params(cfg)
-    sys.path.append(hydra.utils.get_original_cwd())
 
     # physical engine
     self._p = px.init(mode=p.DIRECT)
     self.robot = RollerGrapser(self.cfg.robot_params, self.cfg.init_state)
     self.obj = px.Body(urdf_path=self.cfg.obj_urdf,
-                      base_position=[0.000, 0, 0.13], global_scaling=1)
+                       base_position=self.cfg.obj_pos, global_scaling=1)
     self.obj_copy = px.Body(urdf_path=self.cfg.obj_urdf,
-                          base_position=[0.0, 0.15, 0.13], global_scaling=1, use_fixed_base=True)
+                            base_position=self.cfg.obj_copy_pos, global_scaling=1, use_fixed_base=True)
     self.obj_target = px.Body(urdf_path=self.cfg.obj_urdf,
-                            base_position=[0.0, -0.15, 0.13], global_scaling=1, use_fixed_base=True)
+                              base_position=self.cfg.obj_target_pos, global_scaling=1, use_fixed_base=True)
     self.sensor = tacto.Sensor(
       width=self.cfg.sensor_x/2, height=self.cfg.sensor_y/2, visualize_gui=False, config_path='/juno/u/chaoyi/rl/roller_grasper_tacto/assets/sensors/roller.yml')
     self.world_cam = Camera(self.cfg.cam.world_cam)
@@ -42,7 +40,8 @@ class RollerEnv(gym.Env):
 
     # create o3d render window
     self.o3dvis = self.init_o3d_render()
-    self.world_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05)
+    self.world_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
+      size=0.03)
 
     self.reset()
 
@@ -60,6 +59,14 @@ class RollerEnv(gym.Env):
         cfg['cam'][k]['width'] = cfg.render_x
       if cam.height is None:
         cfg['cam'][k]['height'] = cfg.render_y
+      if cam.camTargetPos is None:
+        cfg['cam'][k]['camTargetPos'] = cfg.obj_copy_pos
+      if cam.camDistance is None:
+        cfg['cam'][k]['camDistance'] = cfg.depth_cam_min_distance
+      if cam.nearPlane is None:
+        cfg['cam'][k]['nearPlane'] = cfg.sensor_near
+      if cam.farPlane is None:
+        cfg['cam'][k]['farPlane'] = cfg.sensor_far
 
     # SLAM params
     cfg.max_correspondence_distance_coarse = cfg.voxel_size * 15
@@ -102,14 +109,18 @@ class RollerEnv(gym.Env):
     angle_to_vertial_axis = (self.obj_angle+np.pi/4) % (np.pi/2) - np.pi/4
     self.depth_cam_distance = self.cfg.depth_cam_min_distance / \
       abs(np.cos(angle_to_vertial_axis))
+    self.left_cam.update(distance = self.depth_cam_distance)
+    self.right_cam.update(distance = self.depth_cam_distance)
 
-    # using object current orientation to record if do the loop closure 
+    # using object current orientation to record if do the loop closure
     if abs(self.obj_angle - np.pi) < np.pi/12 and ~self.closed_loop:
       self.cfg.start_detect_loop_idx = len(self.pcd_esitimated)
 
     p.stepSimulation()
 
+    # get raw sensor data
     self.obs = self._get_obs()
+    self.process_sensor_data()
     return self.obs, reward, done, info
 
   def _done(self):
@@ -126,8 +137,8 @@ class RollerEnv(gym.Env):
     return AttrDict(
       {
         "world_cam": {"color": world_cam_color, "depth": world_cam_depth},
-        "left_cam": {"color": left_cam_color, "depth": left_cam_depth}, 
-        "right_cam": {"color": right_cam_color, "depth": right_cam_depth}, 
+        "left_cam": {"color": left_cam_color, "depth": left_cam_depth},
+        "right_cam": {"color": right_cam_color, "depth": right_cam_depth},
         "sensor": [
           {"color": color, "depth": depth}
           for color, depth in zip(colors, depths)
@@ -140,6 +151,14 @@ class RollerEnv(gym.Env):
         "goal": self.goal
       }
     )
+
+  def process_sensor_data(self, obs:AttrDict):
+    """Sensor data to current point cloud
+
+    Args:
+        obs (AttrDict): _description_
+    """
+
 
   def reset(self):
     self.steps = 0
@@ -170,7 +189,6 @@ class RollerEnv(gym.Env):
     p.stepSimulation()
 
     # setup initial point cloud
-
     view_matrix = p.computeViewMatrixFromYawPitchRoll(
       cameraTargetPosition=np.asarray(self.obj_target.init_base_position),
       distance=self.depth_cam_distance,
@@ -234,25 +252,10 @@ class RollerEnv(gym.Env):
       depth = [digit.depth for digit in self.obs.sensor]
       self.sensor.updateGUI(color, depth)
     elif mode == "rgb_array":
+      imgs = []
       rgb_array = np.ones((2048, 2048, 3)).astype(np.uint8)
       # frame data
-      view_matrix = p.computeViewMatrixFromYawPitchRoll(
-        cameraTargetPosition=[0, 0, 0.1],
-        distance=0.2,
-        yaw=90,
-        pitch=-20,
-        roll=0,
-        upAxisIndex=2)
-      proj_matrix = p.computeProjectionMatrixFOV(
-        fov=60, aspect=float(self.cfg.render_x)/self.cfg.render_y,
-        nearVal=0.1, farVal=100.0)
-      (_, _, px, _, _) = p.getCameraImage(
-        width=self.cfg.render_x, height=self.cfg.render_y, viewMatrix=view_matrix,
-        projectionMatrix=proj_matrix,
-        renderer=p.ER_BULLET_HARDWARE_OPENGL
-      )
-      rgb_array[:self.cfg.render_y,
-                :self.cfg.render_x, :] = np.array(px)[..., :3]
+      imgs.append(self.obs.world_cam.color)
 
       # sensor data
       for i in range(len(self.obs.sensor)):
@@ -334,6 +337,7 @@ class RollerEnv(gym.Env):
                                       0]) - np.asarray(self.obj_copy.init_base_position))
         real_obj2worldTrans[3, 3] = 1
         real_world2objTrans = np.linalg.inv(real_obj2worldTrans)
+
         # esitimate object orientation
         esitimated_obj2worldTrans = np.zeros((4, 4))
         obj_init_rot = R.from_quat(self.obj_copy.init_base_orientation)
@@ -398,7 +402,8 @@ class RollerEnv(gym.Env):
         rgb_array[y_start:y_start+16, x_start:x_start+64, :] = txt
         self.o3dvis.clear_geometries()
         x_start += self.cfg.sensor_x
-        pcd_real_down = pcd_real.voxel_down_sample(voxel_size=self.cfg.voxel_size)
+        pcd_real_down = pcd_real.voxel_down_sample(
+          voxel_size=self.cfg.voxel_size)
         pcd_real_combined += pcd_real_down
         pcd_esitimated_down = pcd_esitimated.voxel_down_sample(
           voxel_size=self.cfg.voxel_size)
@@ -603,6 +608,7 @@ class RollerEnv(gym.Env):
 register(
   id="roller-v0", entry_point="roller_env:RollerEnv",
 )
+
 
 @hydra.main(config_path="config", config_name="main")
 def main(cfg):

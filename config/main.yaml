@@ -8,39 +8,42 @@ cam:
   world_cam:
     width: null
     height: null
-    camTargetPos: [0.5, 0, 0.05]
-    camDistance: 0.4
+    crop: [1,1]
+    camTargetPos: [0, 0, 0.1]
+    camDistance: 0.12
     upAxisIndex: 2
     yaw: 90
-    pitch: -30.0
+    pitch: -10
     roll: 0
-    fov: 60
+    fov: 90
     nearPlane: 0.01
     farPlane: 100
   left_cam:
     width: null
     height: null
-    camTargetPos: [0.5, 0, 0.05]
-    camDistance: 0.4
+    crop: [1,1]
+    camTargetPos: null 
+    camDistance: null 
+    nearPlane: null
+    farPlane: null
     upAxisIndex: 2
-    yaw: 90
-    pitch: -30.0
+    yaw: 0
+    pitch: 0
     roll: 0
-    fov: 60
-    nearPlane: 0.01
-    farPlane: 100
+    fov: 90
   right_cam:
     width: null
     height: null
-    camTargetPos: [0.5, 0, 0.05]
-    camDistance: 0.4
+    crop: [1,1]
+    camTargetPos: null
+    camDistance: null
+    nearPlane: null
+    farPlane: null
     upAxisIndex: 2
-    yaw: 90
-    pitch: -30.0
+    yaw: 180
+    pitch: 0
     roll: 0
-    fov: 60
-    nearPlane: 0.01
-    farPlane: 100
+    fov: 90
 
 # depth sensor setting
 sensor_near: 0.001
@@ -50,6 +53,9 @@ depth_cam_min_distance: 0.03
 
 # assets
 obj_urdf: /juno/u/chaoyi/rl/roller_grasper_tacto/assets/objects/curved_cube.urdf
+obj_pos: [0.000, 0, 0.13]
+obj_copy_pos: [0.0, 0.15, 0.13]
+obj_target_pos: [0.0, -0.15, 0.13]
 robot_params:
   urdf_path: /juno/u/chaoyi/rl/roller_grasper_tacto/assets/robots/roller.urdf
   use_fixed_base: True
@@ -72,5 +78,5 @@ detect_loop_extend: 15
 use_pcd_goal: False
 
 # simulation
-total_steps: 10
+total_steps: 2
 file_prefix: debug

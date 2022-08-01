@@ -16,6 +16,7 @@ import pybullet as p
 class Camera:
   def __init__(self, cfg:AttrDict):
     self.cfg = cfg
+    self.x_start = 
     self.viewMatrix = p.computeViewMatrixFromYawPitchRoll(
       self.cfg.camTargetPos, self.cfg.camDistance, self.cfg.yaw, self.cfg.pitch, self.cfg.roll, self.cfg.upAxisIndex
     )
