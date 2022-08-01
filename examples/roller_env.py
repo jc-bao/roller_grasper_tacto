@@ -13,8 +13,8 @@ from PIL import Image
 import open3d as o3d
 import dcargs
 
-from utils import Camera, convert_obs_to_obs_space, create_o3dvis, unifrom_sample_quaternion, char_to_pixels, pairwise_registration
-from roller import RollerGrapser
+from roller_grasper_tacto.examples.utils import Camera, convert_obs_to_obs_space, create_o3dvis, unifrom_sample_quaternion, char_to_pixels, pairwise_registration
+from roller_grasper_tacto.examples.roller import RollerGrapser
 
 
 class RollerEnv(gym.Env):
