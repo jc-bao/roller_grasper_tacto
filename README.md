@@ -6,6 +6,16 @@ Based on PyBullet and Tacto.
 
 ### Reconstruction Environment
 
+#### System overview
+
+[new depth image, old point clouds, old orientation, esitimated delta orientation] -`process pcds`-> [new point clouds, new orientation]
+
+Details:
+
+[image data] -`pcd_from_depth(depth_image)`-> [point cloud (in camera frame)] -`pcd_cam2world(pcd, camera_pos)`-> [point cloud (in world frame)] -`merge_pcds(old_pcds, new_pcd, old_orientation, delta_orientation)`-> [point clouds, new_orintation]
+
+#### Demos
+
 * Single sensor case
 
 ![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4m3v8vii9g20sg0e8b2a.gif)
@@ -70,6 +80,8 @@ pip install scipyplot deepdish tacto
   - [x] With small camera range (2022.7.27)
   - [x] With moving camera (2022.7.27)
 - [x] Reconstruct of different shapes (e.g. EDGA dataset) (2022.7.28)
+- [ ] Wrapper up reconstruction function
+  - [ ] 
 - [ ] Efficient way to detect close loop
 - [ ] Using ICP to matching points
 

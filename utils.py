@@ -1,3 +1,4 @@
+from this import d
 import pybullet as pb
 import pybulletX as px
 import collections
@@ -5,37 +6,46 @@ import numpy as np
 import gym
 from PIL import Image, ImageFont, ImageDraw
 import open3d as o3d
+from typing import List
 
 import pybullet as p
 
 
 class Camera:
-  def __init__(self, width=320, height=240):
+  def __init__(self, width: int = 320, height: int = 240, target: List[float] = [0., 0., 0.1], dist: float = 0.1, yaw: float = 90.0, pitch: float = -20.0, roll: float = 0, fov: float = 90.0, near: float = 0.001, far: float = 100.0, crop: List[float] = [1,1]):
     self.width = width
     self.height = height
+    self.x_start = int(width * (1 - crop[0]) / 2)
+    self.y_start = int(height * (1 - crop[1]) / 2)
+    self.x_end = int(width * (1 + crop[0]) / 2)
+    self.y_end = int(height * (1 + crop[1]) / 2)
 
-    camTargetPos = [0.5, 0, 0.05]
-    camDistance = 0.4
-    upAxisIndex = 2
+    self.camTargetPos = target
+    self.camDistance = dist
+    self.upAxisIndex = 2
 
-    yaw = 90
-    pitch = -30.0
-    roll = 0
+    self.yaw = yaw
+    self.pitch = pitch
+    self.roll = roll
 
-    fov = 60
-    nearPlane = 0.01
-    farPlane = 100
+    self.near = near
+    self.far = far
 
     self.viewMatrix = p.computeViewMatrixFromYawPitchRoll(
-      camTargetPos, camDistance, yaw, pitch, roll, upAxisIndex
+      self.camTargetPos, self.camDistance, self.yaw, self.pitch, self.roll, self.upAxisIndex
     )
 
     aspect = width / height
-
     self.projectionMatrix = p.computeProjectionMatrixFOV(
-      fov, aspect, nearPlane, farPlane
+      fov, aspect, near, far
     )
 
+  def update_dist(self, dist:float):
+    self.camDistance = dist
+    self.viewMatrix = p.computeViewMatrixFromYawPitchRoll(
+      self.camTargetPos, self.camDistance, self.yaw, self.pitch, self.roll, self.upAxisIndex
+    )
+    
   def get_image(self):
     img_arr = p.getCameraImage(
       self.width,
@@ -47,8 +57,10 @@ class Camera:
       renderer=p.ER_BULLET_HARDWARE_OPENGL,
     )
 
-    rgb = img_arr[2]  # color image RGB H x W x 3 (uint8)
-    dep = img_arr[3]  # depth image H x W (float32)
+    rgb = np.asarray(img_arr[2], dtype=np.uint8)[self.y_start:self.y_end, self.x_start:self.x_end]  # color image RGB H x W x 3 (uint8)
+    dep = np.asarray(img_arr[3], dtype=np.uint8)[self.y_start:self.y_end, self.x_start:self.x_end]  # depth image H x W (float32)
+    dep = self.far * self.near / \
+      (self.far - (self.far - self.near) * dep)
     return rgb, dep
 
 
@@ -79,20 +91,24 @@ def convert_obs_to_obs_space(obs):
     # SpaceDict inherits from gym.spaces.Dict and provides more functionalities
     return px.utils.SpaceDict({k: convert_obs_to_obs_space(v) for k, v in obs.items()})
 
+
 def unifrom_sample_quaternion():
-  q = p.getQuaternionFromEuler([np.random.uniform(-np.pi, np.pi), np.random.uniform(-np.pi, np.pi), np.random.uniform(-np.pi, np.pi)])
+  q = p.getQuaternionFromEuler([np.random.uniform(-np.pi, np.pi),
+                               np.random.uniform(-np.pi, np.pi), np.random.uniform(-np.pi, np.pi)])
   return q
 
+
 def char_to_pixels(text, path='arialbd.ttf', fontsize=14):
-  # font = ImageFont.truetype(path, fontsize) 
-  # w, h = font.getsize(text)  
+  # font = ImageFont.truetype(path, fontsize)
+  # w, h = font.getsize(text)
   # h *= 2
-  image = Image.new('L', (64, 16), 256)  
+  image = Image.new('L', (64, 16), 256)
   draw = ImageDraw.Draw(image)
   draw.text((0, 0), text, align='center')
   arr = np.asarray(image)
   arr = np.expand_dims(arr, 2).repeat(3, axis=2)
   return arr
+
 
 def pairwise_registration(source, target, max_correspondence_distance_coarse,
                           max_correspondence_distance_fine):
@@ -109,6 +125,18 @@ def pairwise_registration(source, target, max_correspondence_distance_coarse,
     source, target, max_correspondence_distance_fine,
     icp_fine.transformation)
   return transformation_icp, information_icp, rmse, fitness
+
+
+def create_o3dvis(render_size: int = 512):
+  o3dvis = o3d.visualization.Visualizer()
+  o3dvis.create_window(
+    width=render_size, height=render_size, visible=False)
+  o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
+  o3dvis.get_view_control().set_front(np.array([1, 1, 1]))
+  o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
+  o3dvis.get_render_option().background_color = (0.5, 0.5, 0.5)
+  return o3dvis
+
 
 if __name__ == '__main__':
   arr = char_to_pixels('a')
