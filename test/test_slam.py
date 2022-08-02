@@ -1,26 +1,56 @@
 import pytest
 import dill
+import numpy as np
+from PIL import Image
+
 from roller_slam.slam import RollerSLAM
 
+
 @pytest.fixture
-def init_RollerSLAM():
+def rollerSLAM():
   return RollerSLAM(
     width=256,
     height=64,
-    focal_width=256,
-    focal_height=256,
+    focal_width=64//2,
+    focal_height=256//2,
     voxel_size=0.00002,
     matching_num=5)
-  
+
+
 @pytest.fixture
-def init_data():
+def data():
   with open('assets/data.pkl', 'rb') as f:
     data = dill.load(f)
   '''
-      'left_cam': list(), 
+      'left_cam'
+      'world2leftcam_trans'
       'right_cam': list(),
-      'obj_trans': list(), 
-      'real_delta_trans': list(),
-      'estimated_delta_trans': list()
+      'world2rightcam_trans'
+      'obj_trans'
+      'real_delta_trans'
+      'estimated_delta_trans'
   '''
   return data
+
+def test_depth_img(data):
+  depth = data['left_cam'][0]
+  far = depth.max()
+  depth_01 = (depth / far).astype(np.float32)
+  depth_01[depth_01 > 0.98] = 0
+  depth_8 = (depth_01*256).astype(np.uint8)
+  Image.fromarray(depth_8, mode='L').convert('RGB').save('results/test_depth_img.jpg')
+
+def test_depth2pcd(rollerSLAM, data):
+  pcds = []
+  colors = []
+  obj2world_trans = []
+  num_data = len(data['left_cam'])
+  for i in range(num_data):
+    for cam in ['left', 'right']:
+      depth_img = data[f'{cam}_cam'][i]
+      world2cam_trans = data[f'world2{cam}cam_trans'][i]
+      pcd = rollerSLAM.depth2pcd(depth_img, world2cam_trans)
+      pcds.append(pcd)
+      obj2world_trans.append(data['obj_trans'][i])
+  color = rollerSLAM.vis_pcds(pcds, obj2world_trans)
+  Image.fromarray(color).save('results/test_depth2pcd.gif')

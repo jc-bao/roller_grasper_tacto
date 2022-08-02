@@ -45,7 +45,9 @@ class RollerEnv(gym.Env):
     self.sensor_far: float = 0.08
     self.depth_cam_min_distance: float = 0.03
     self.pinhole_camera_intrinsic = o3d.camera.PinholeCameraIntrinsic(self.sensor_x, self.sensor_y,
-                                                                      self.sensor_size/2, self.sensor_size/2, self.sensor_x/2, self.sensor_y/2)
+                                                                      self.sensor_y/2, 
+                                                                      self.sensor_x/2, 
+                                                                      self.sensor_x/2, self.sensor_y/2)
 
     # SLAM params
     self.matching_num: int = 5
@@ -114,7 +116,9 @@ class RollerEnv(gym.Env):
     self.reset()
     self.data = {
       'left_cam': list(), 
+      'world2leftcam_trans': list(),
       'right_cam': list(),
+      'world2rightcam_trans': list(),
       'obj_trans': list(), 
       'real_delta_trans': list(),
       'estimated_delta_trans': list()
@@ -345,18 +349,14 @@ class RollerEnv(gym.Env):
           (self.sensor_far - (self.sensor_far - self.sensor_near) * depthImg)
 
         
-        if cam_id == 1:
-          self.data['right_cam'].append(depth)
-        else:
-          self.data['left_cam'].append(depth)
         
 
         depthImg = depth/self.sensor_far
         depthImg[depthImg > 0.98] = 0
-        depth = o3d.geometry.Image((depthImg*255).astype(np.uint8))
+        depth_o3d = o3d.geometry.Image((depthImg*255).astype(np.uint8))
         depth_16 = o3d.geometry.Image((depthImg*65536).astype(np.uint16))
         rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
-          color, depth, depth_scale=1/self.sensor_far, depth_trunc=1000, convert_rgb_to_intensity=False)
+          color, depth_o3d, depth_scale=1/self.sensor_far, depth_trunc=1000, convert_rgb_to_intensity=False)
         # pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
         #   rgbd, self.pinhole_camera_intrinsic)
 
@@ -376,6 +376,13 @@ class RollerEnv(gym.Env):
         else:
           raise NotImplementedError
         world2camTrans = np.linalg.inv(cam2worldTrans)
+
+        if cam_id == 1:
+          self.data['right_cam'].append(depth)
+          self.data['world2rightcam_trans'].append(world2camTrans)
+        else:
+          self.data['left_cam'].append(depth)
+          self.data['world2leftcam_trans'].append(world2camTrans)
 
         pcd = o3d.geometry.PointCloud.create_from_depth_image(
          depth_16, self.pinhole_camera_intrinsic, depth_scale=65535/self.sensor_far, project_valid_depth_only=True) 
@@ -421,8 +428,9 @@ class RollerEnv(gym.Env):
         self.o3dvis.add_geometry(self.world_frame)
         pcd.transform(cam2worldTrans)
         self.o3dvis.add_geometry(pcd)
+        self.o3dvis.add_geometry(copy.deepcopy(pcd_world).translate((0,0,00.02)))
         self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
-        self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
+        self.o3dvis.get_view_control().set_front(np.array([1, 1, 1]))
         self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
         color = self.o3dvis.capture_screen_float_buffer(do_render=True)
         rgb_array[y_start:y_start+self.sensor_size,
@@ -447,7 +455,7 @@ class RollerEnv(gym.Env):
         self.o3dvis.add_geometry(copy.deepcopy(self.world_frame).transform(
           esitimated_world2objTrans).translate([0, 0, -0.05]))
         self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
-        self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
+        self.o3dvis.get_view_control().set_front(np.array([1, 1, 1]))
         self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
         color = self.o3dvis.capture_screen_float_buffer(do_render=True)
         rgb_array[y_start:y_start+self.sensor_size,
@@ -477,7 +485,7 @@ class RollerEnv(gym.Env):
       for pc in self.pcd_real:
         self.o3dvis.add_geometry(pc)
       self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
-      self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
+      self.o3dvis.get_view_control().set_front(np.array([1, 1, 1]))
       self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
       color = self.o3dvis.capture_screen_float_buffer(do_render=True)
       rgb_array[y_start:y_start+self.sensor_size, x_start:x_start +
@@ -556,7 +564,7 @@ class RollerEnv(gym.Env):
         self.o3dvis.add_geometry(copy.deepcopy(pc).transform(
           self.pose_graph.nodes[point_id].pose))
       self.o3dvis.get_view_control().set_lookat(np.array([0, 0, 0]))
-      self.o3dvis.get_view_control().set_front(np.array([1, 0, 0]))
+      self.o3dvis.get_view_control().set_front(np.array([1, 1, 1]))
       self.o3dvis.get_view_control().set_up(np.array([0, 0, 1]))
       color = self.o3dvis.capture_screen_float_buffer(do_render=True)
       rgb_array[y_start:y_start+self.sensor_size, x_start:x_start +
