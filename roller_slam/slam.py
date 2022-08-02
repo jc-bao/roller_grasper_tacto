@@ -16,17 +16,12 @@ class RollerSLAM:
     self.voxel_size = voxel_size
     self.matching_num = matching_num
     self.max_correspondence_distance_fine = voxel_size*1.5
+    self.max_correspondence_distance_coarse = voxel_size*15
 
     # visualization paramteters
     self.o3dvis = self.create_o3dvis(render_size=1024)
     self.world_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
       size=0.02)
-
-  def process_data(self, depth_image_left: np.ndarray, depth_image_right: np.ndarray, world2camleft_trans: np.ndarray, world2camright_trans: np.ndarray, obj2world_trans: List[np.ndarray], new_obj2world_trans: np.ndarray, pose_graph_in_obj: o3d.pipelines.registration.PoseGraph) -> Tuple[o3d.geometry.PointCloud, np.ndarray]:
-    new_pcd_left = self.depth2pcd(depth_image_left, world2camleft_trans)
-    new_pcd_right = self.depth2pcd(depth_image_right, world2camright_trans)
-    new_pcd = new_pcd_left + new_pcd_right
-    return self.merge_pcds(old_pcds, new_pcd, old_trans, delta_trans)
 
 
   def depth2pcd(self, depth_image: np.ndarray, world2cam_trans: np.ndarray) -> o3d.geometry.PointCloud:
@@ -46,8 +41,8 @@ class RollerSLAM:
     assert (self.height, self.width) == depth_image.shape, 'depth image shape is not equal to camera resolution'
 
     pcd = o3d.geometry.PointCloud.create_from_depth_image(
-      depth_i16, self.pinhole_camera_intrinsic, world2cam_trans, 
-        depth_scale=65535/sensor_far, project_valid_depth_only=True)
+      depth_i16, self.pinhole_camera_intrinsic, world2cam_trans,
+      depth_scale=65535/sensor_far, project_valid_depth_only=True)
     pcd_down = pcd.voxel_down_sample(voxel_size=self.voxel_size)
     pcd_down.estimate_normals(
       search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
@@ -70,21 +65,24 @@ class RollerSLAM:
     source_id = old_pcds_num
     for i in range(min(old_pcds_num, self.matching_num)):
       target_id = old_pcds_num - i - 1
-      new2old_trans = new_obj2world_trans @ np.linalg.inv(
-        obj2world_trans[target_id])
+      old2new_trans = obj2world_trans[target_id] @ np.linalg.inv(new_obj2world_trans)
+      icp_coarse = o3d.pipelines.registration.registration_icp(
+        new_pcd, old_pcds[target_id], self.max_correspondence_distance_coarse, 
+        old2new_trans,
+        o3d.pipelines.registration.TransformationEstimationPointToPlane())
       icp_fine = o3d.pipelines.registration.registration_icp(
         new_pcd, old_pcds[target_id], self.max_correspondence_distance_fine,
-        new2old_trans,
+        icp_coarse.transformation, # Note: tar2src
         o3d.pipelines.registration.TransformationEstimationPointToPlane())
       information_icp = o3d.pipelines.registration.get_information_matrix_from_point_clouds(
         new_pcd, old_pcds[target_id], self.max_correspondence_distance_fine,
         icp_fine.transformation)
       if i == 0:
-        new_obj2world_trans = icp_fine.transformation @ obj2world_trans[target_id]
+        new_obj2world_trans = np.linalg.inv(icp_fine.transformation) @ obj2world_trans[target_id]
         obj2world_trans.append(new_obj2world_trans)
         pose_graph_in_obj.nodes.append(
           o3d.pipelines.registration.PoseGraphNode(
-            np.linalg.inv(new_obj2world_trans)))
+            new_obj2world_trans))
 
         pose_graph_in_obj.edges.append(
           o3d.pipelines.registration.PoseGraphEdge(source_id,
@@ -106,7 +104,7 @@ class RollerSLAM:
     o3dvis = o3d.visualization.Visualizer()
     o3dvis.create_window(
       width=render_size, height=render_size, visible=False)
-    o3dvis.get_render_option().background_color = (0.8, 0.8, 0.8)
+    o3dvis.get_render_option().background_color = (0.9, 0.9, 0.9)
     return o3dvis
 
   def change_o3dvis(self, o3dvis) -> None:
