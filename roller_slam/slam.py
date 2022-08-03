@@ -23,7 +23,6 @@ class RollerSLAM:
     self.world_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
       size=0.02)
 
-
   def depth2pcd(self, depth_image: np.ndarray, world2cam_trans: np.ndarray) -> o3d.geometry.PointCloud:
     """return 
 
@@ -49,7 +48,22 @@ class RollerSLAM:
     assert pcd_down is not None, 'point cloud fail to generate'
     return pcd_down
 
-  def merge_pcds(self, old_pcds: List[o3d.geometry.PointCloud], new_pcd: o3d.geometry.PointCloud, obj2world_trans: List[np.ndarray], new_obj2world_trans: np.ndarray, pose_graph_in_obj: o3d.pipelines.registration.PoseGraph) -> Tuple[List[o3d.geometry.PointCloud], List[np.ndarray], o3d.pipelines.registration.PoseGraph]:
+  def icp(self, source_pcd:o3d.geometry.PointCloud, target_pcd:o3d.geometry.PointCloud, tar2src_trans: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    icp_coarse = o3d.pipelines.registration.registration_icp(
+        source_pcd, target_pcd, self.max_correspondence_distance_coarse,
+        tar2src_trans,
+        o3d.pipelines.registration.TransformationEstimationPointToPlane())
+    icp_fine = o3d.pipelines.registration.registration_icp(
+      source_pcd, target_pcd, self.max_correspondence_distance_fine,
+      icp_coarse.transformation,  # Note: tar2src
+      o3d.pipelines.registration.TransformationEstimationPointToPlane())
+    information_icp = o3d.pipelines.registration.get_information_matrix_from_point_clouds(
+      source_pcd, target_pcd, self.max_correspondence_distance_fine,
+      icp_fine.transformation)
+    return icp_fine.transformation, information_icp
+
+
+  def merge_pcds(self, old_pcds: List[o3d.geometry.PointCloud], new_pcd: o3d.geometry.PointCloud, new_obj2world_trans: np.ndarray, pose_graph_in_obj: o3d.pipelines.registration.PoseGraph) -> Tuple[List[o3d.geometry.PointCloud], o3d.pipelines.registration.PoseGraph]:
     """merge old point clouds into the new one and return new point cloud and esitimated new orientation of the new point cloud
 
     Args:
@@ -65,40 +79,51 @@ class RollerSLAM:
     source_id = old_pcds_num
     for i in range(min(old_pcds_num, self.matching_num)):
       target_id = old_pcds_num - i - 1
-      old2new_trans = obj2world_trans[target_id] @ np.linalg.inv(new_obj2world_trans)
-      icp_coarse = o3d.pipelines.registration.registration_icp(
-        new_pcd, old_pcds[target_id], self.max_correspondence_distance_coarse, 
-        old2new_trans,
-        o3d.pipelines.registration.TransformationEstimationPointToPlane())
-      icp_fine = o3d.pipelines.registration.registration_icp(
-        new_pcd, old_pcds[target_id], self.max_correspondence_distance_fine,
-        icp_coarse.transformation, # Note: tar2src
-        o3d.pipelines.registration.TransformationEstimationPointToPlane())
-      information_icp = o3d.pipelines.registration.get_information_matrix_from_point_clouds(
-        new_pcd, old_pcds[target_id], self.max_correspondence_distance_fine,
-        icp_fine.transformation)
+      target_trans = pose_graph_in_obj.nodes[target_id].pose
+      tar2src_trans = target_trans @ np.linalg.inv(
+        new_obj2world_trans)
+      new_tar2src_trans, information_icp = self.icp(new_pcd, old_pcds[target_id], tar2src_trans)
       if i == 0:
-        new_obj2world_trans = np.linalg.inv(icp_fine.transformation) @ obj2world_trans[target_id]
-        obj2world_trans.append(new_obj2world_trans)
+        new_obj2world_trans = np.linalg.inv(
+          new_tar2src_trans) @ target_trans
         pose_graph_in_obj.nodes.append(
           o3d.pipelines.registration.PoseGraphNode(
             new_obj2world_trans))
 
         pose_graph_in_obj.edges.append(
-          o3d.pipelines.registration.PoseGraphEdge(source_id,
-                                                   target_id,
-                                                   icp_fine.transformation,
-                                                   information_icp,
-                                                   uncertain=False))
+          o3d.pipelines.registration.PoseGraphEdge(
+            target_id, source_id, new_tar2src_trans, information_icp,uncertain=False))
       else:
         pose_graph_in_obj.edges.append(
-          o3d.pipelines.registration.PoseGraphEdge(source_id,
-                                                   target_id,
-                                                   icp_fine.transformation,
-                                                   information_icp,
-                                                   uncertain=True))
+          o3d.pipelines.registration.PoseGraphEdge(
+            target_id, source_id, new_tar2src_trans,information_icp,uncertain=True))
     old_pcds.append(new_pcd)
-    return old_pcds, obj2world_trans, pose_graph_in_obj
+    return old_pcds, pose_graph_in_obj
+
+  def add_graph_edge(self, pose_graph: o3d.pipelines.registration.PoseGraph, pcds: List[o3d.geometry.PointCloud], source_id: int, target_ids: List[int]) -> o3d.pipelines.registration.PoseGraph:
+    source_trans = pose_graph.nodes[source_id].pose
+    source_pcd = pcds[source_id]
+    for target_id in target_ids:
+      target_pcd = pcds[target_id]
+      target_trans = pose_graph.nodes[target_id].pose
+      tar2src_trans = target_trans @ np.linalg.inv(source_trans)
+      new_tar2src_trans, information_icp = self.icp(source_pcd, target_pcd, tar2src_trans)
+      pose_graph.edges.append(
+        o3d.pipelines.registration.PoseGraphEdge(
+          target_id, source_id, new_tar2src_trans, information_icp, uncertain=True))
+    return pose_graph
+
+  def optimize_graph(self, pose_graph: o3d.pipelines.registration.PoseGraph) -> o3d.pipelines.registration.PoseGraph:
+    option = o3d.pipelines.registration.GlobalOptimizationOption(
+      max_correspondence_distance=self.max_correspondence_distance_fine,
+      edge_prune_threshold=0.25,
+      reference_node=0)
+    o3d.pipelines.registration.global_optimization(
+      pose_graph,
+      o3d.pipelines.registration.GlobalOptimizationLevenbergMarquardt(),
+      o3d.pipelines.registration.GlobalOptimizationConvergenceCriteria(),
+      option)
+    return pose_graph
 
   def create_o3dvis(self, render_size: int = 512):
     o3dvis = o3d.visualization.Visualizer()

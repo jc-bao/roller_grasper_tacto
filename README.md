@@ -81,6 +81,8 @@ pip install scipyplot deepdish tacto
   - [x] With moving camera (2022.7.27)
 - [x] Reconstruct of different shapes (e.g. EDGA dataset) (2022.7.28)
 - [ ] Wrapper up reconstruction function
+  - [x] wrap up functions (2022.7.31)
+  - [x] test functions and data wrap up (2022.8.1)
   - [ ] 
 - [ ] Efficient way to detect close loop
 - [ ] Using ICP to matching points

@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image
 import open3d as o3d
 from tqdm import tqdm
+from scipy.spatial.transform import Rotation as R
 
 from roller_slam.slam import RollerSLAM
 
@@ -16,7 +17,7 @@ def rollerSLAM():
     focal_width=64//2,
     focal_height=256//2,
     voxel_size=0.00002,
-    matching_num=5)
+    matching_num=3)
 
 
 @pytest.fixture
@@ -62,10 +63,10 @@ def test_depth2pcd(rollerSLAM, data):
 def test_merge_pcds(rollerSLAM, data):
   # load pcds from depth image
   pose_graph = o3d.pipelines.registration.PoseGraph()
-  num_pcds = 40
+  num_pcds = min(10, len(data['left_cam']))
   old_pcds = []
-  obj2world_trans = []
   colors = []
+  closed_loop = False
   for i in tqdm(range(num_pcds)):
     new_pcd = o3d.geometry.PointCloud()
     for cam in ['left', 'right']:
@@ -74,20 +75,32 @@ def test_merge_pcds(rollerSLAM, data):
       new_pcd += rollerSLAM.depth2pcd(depth_img, world2cam_trans)
     if i == 0:
       old_pcds.append(new_pcd)
-      obj2world_trans.append(np.eye(4))
+      pose_graph.nodes.append(
+        o3d.pipelines.registration.PoseGraphNode(np.eye(4)))
     else:
-      last_old_trans = obj2world_trans[-1]
+      last_old_trans = np.array(pose_graph.nodes[-1].pose)
       new_obj2world_trans = data['estimated_delta_trans'][i-1] @ last_old_trans
 
-      color_init = rollerSLAM.vis_pcds([*old_pcds, new_pcd], [*obj2world_trans, new_obj2world_trans]) 
-      color_truth = rollerSLAM.vis_pcds([*old_pcds, new_pcd], data['obj_trans'][:i])
+      # color_init = rollerSLAM.vis_pcds([*old_pcds, new_pcd], [*obj2world_trans, new_obj2world_trans]) 
+      # color_truth = rollerSLAM.vis_pcds([*old_pcds, new_pcd], 
+      #   [np.linalg.inv(data['obj_trans'][i])@t for t in data['obj_trans'][:i]])
 
       # Key function
-      old_pcds, obj2world_trans, pose_graph = rollerSLAM.merge_pcds(old_pcds, new_pcd, obj2world_trans, new_obj2world_trans, pose_graph)
+      old_pcds, pose_graph = rollerSLAM.merge_pcds(old_pcds, new_pcd, new_obj2world_trans, pose_graph)
 
-      color_end = rollerSLAM.vis_pcds(old_pcds, obj2world_trans)
-      color = np.concatenate([color_init, color_truth, color_end], axis=1)
-      colors.append(color)
+      color_end = rollerSLAM.vis_pcds(old_pcds, 
+        [np.linalg.inv(last_old_trans)@ n.pose for n in pose_graph.nodes])
+      # color = np.concatenate([color_truth, color_end], axis=1)
+      colors.append(color_end)
+
+      # detect if we are going to merge graph
+      obj_rot_angle = np.linalg.norm(R.from_matrix(last_old_trans[:3,:3]).as_rotvec())
+      if abs(obj_rot_angle-np.pi) < np.pi/10 and not closed_loop:
+        print('adding constrains...')
+        rollerSLAM.add_graph_edge(pose_graph, old_pcds, i, list(range(12)))
+        print('optimize...')
+        pose_graph = rollerSLAM.optimize_graph(pose_graph)
+        closed_loop = True
   colors_img = [Image.fromarray(c) for c in colors]
   # visualize result
   colors_img[0].save('results/test_merge_pcds.gif', save_all=True, append_images=colors_img[1:])
