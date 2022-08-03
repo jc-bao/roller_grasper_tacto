@@ -63,7 +63,7 @@ def test_depth2pcd(rollerSLAM, data):
 def test_merge_pcds(rollerSLAM, data):
   # load pcds from depth image
   pose_graph = o3d.pipelines.registration.PoseGraph()
-  num_pcds = min(10, len(data['left_cam']))
+  num_pcds = min(40, len(data['left_cam']))
   old_pcds = []
   colors = []
   closed_loop = False
