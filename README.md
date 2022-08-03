@@ -111,9 +111,11 @@ pip install scipyplot deepdish tacto
 Possible Gaps
 * The Gel is rounded but our sensor get a plane
 * The Gel has less depth
-* The Gel has less contact height
-![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4u0rhlu7qg20sg0sg4qp.gif)
 
+
+|Constrain with depth and size | Constrain with Gel's shape|
+| - | - |
+| ![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4u0rhlu7qg20sg0sg4qp.gif) | ![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4u31iks7kg20sg0sg1l1.gif) |
 
 ## Details
 

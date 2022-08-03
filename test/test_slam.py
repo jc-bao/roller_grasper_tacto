@@ -22,7 +22,7 @@ def rollerSLAM():
 
 @pytest.fixture
 def data():
-  with open('assets/data_25664_dep2e-3.pkl', 'rb') as f:
+  with open('assets/data_25664_rdep2e-3.pkl', 'rb') as f:
     data = dill.load(f)
   '''
       'left_cam'
@@ -95,7 +95,7 @@ def test_merge_pcds(rollerSLAM, data):
 
       # detect if we are going to merge graph
       obj_rot_angle = np.linalg.norm(R.from_matrix(last_old_trans[:3,:3]).as_rotvec())
-      if abs(obj_rot_angle-np.pi) < np.pi/10 and not closed_loop:
+      if abs(obj_rot_angle-np.pi) < np.pi/30 and not closed_loop:
         print('adding constrains...')
         rollerSLAM.add_graph_edge(pose_graph, old_pcds, i, list(range(10)))
         print('optimize...')
