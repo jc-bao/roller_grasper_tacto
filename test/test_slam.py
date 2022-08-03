@@ -22,7 +22,7 @@ def rollerSLAM():
 
 @pytest.fixture
 def data():
-  with open('assets/data.pkl', 'rb') as f:
+  with open('assets/data_25664_dep2e-3.pkl', 'rb') as f:
     data = dill.load(f)
   '''
       'left_cam'
@@ -63,7 +63,7 @@ def test_depth2pcd(rollerSLAM, data):
 def test_merge_pcds(rollerSLAM, data):
   # load pcds from depth image
   pose_graph = o3d.pipelines.registration.PoseGraph()
-  num_pcds = min(40, len(data['left_cam']))
+  num_pcds = min(80, len(data['left_cam']))
   old_pcds = []
   colors = []
   closed_loop = False
@@ -97,10 +97,17 @@ def test_merge_pcds(rollerSLAM, data):
       obj_rot_angle = np.linalg.norm(R.from_matrix(last_old_trans[:3,:3]).as_rotvec())
       if abs(obj_rot_angle-np.pi) < np.pi/10 and not closed_loop:
         print('adding constrains...')
-        rollerSLAM.add_graph_edge(pose_graph, old_pcds, i, list(range(12)))
+        rollerSLAM.add_graph_edge(pose_graph, old_pcds, i, list(range(10)))
         print('optimize...')
         pose_graph = rollerSLAM.optimize_graph(pose_graph)
         closed_loop = True
+      if closed_loop:
+        print('adding constrains...')
+        start = i - 36 # This is hardcoded, Remove it later
+        rollerSLAM.add_graph_edge(pose_graph, old_pcds, i, list(range(start,start+10)))
+        print('optimize...')
+        pose_graph = rollerSLAM.optimize_graph(pose_graph)
+
   colors_img = [Image.fromarray(c) for c in colors]
   # visualize result
   colors_img[0].save('results/test_merge_pcds.gif', save_all=True, append_images=colors_img[1:])

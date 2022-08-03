@@ -1,3 +1,4 @@
+from doctest import UnexpectedException
 from typing import Tuple, List
 import numpy as np
 import open3d as o3d
@@ -15,6 +16,7 @@ class RollerSLAM:
     # SLAM paramteters
     self.voxel_size = voxel_size
     self.matching_num = matching_num
+    self.fitness_bar = 0.01
     self.max_correspondence_distance_fine = voxel_size*1.5
     self.max_correspondence_distance_coarse = voxel_size*15
 
@@ -48,7 +50,7 @@ class RollerSLAM:
     assert pcd_down is not None, 'point cloud fail to generate'
     return pcd_down
 
-  def icp(self, source_pcd:o3d.geometry.PointCloud, target_pcd:o3d.geometry.PointCloud, tar2src_trans: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+  def icp(self, source_pcd:o3d.geometry.PointCloud, target_pcd:o3d.geometry.PointCloud, tar2src_trans: np.ndarray) -> Tuple[np.ndarray, float, np.ndarray]:
     icp_coarse = o3d.pipelines.registration.registration_icp(
         source_pcd, target_pcd, self.max_correspondence_distance_coarse,
         tar2src_trans,
@@ -60,7 +62,7 @@ class RollerSLAM:
     information_icp = o3d.pipelines.registration.get_information_matrix_from_point_clouds(
       source_pcd, target_pcd, self.max_correspondence_distance_fine,
       icp_fine.transformation)
-    return icp_fine.transformation, information_icp
+    return icp_fine.transformation, icp_fine.fitness, information_icp
 
 
   def merge_pcds(self, old_pcds: List[o3d.geometry.PointCloud], new_pcd: o3d.geometry.PointCloud, new_obj2world_trans: np.ndarray, pose_graph_in_obj: o3d.pipelines.registration.PoseGraph) -> Tuple[List[o3d.geometry.PointCloud], o3d.pipelines.registration.PoseGraph]:
@@ -82,17 +84,21 @@ class RollerSLAM:
       target_trans = pose_graph_in_obj.nodes[target_id].pose
       tar2src_trans = target_trans @ np.linalg.inv(
         new_obj2world_trans)
-      new_tar2src_trans, information_icp = self.icp(new_pcd, old_pcds[target_id], tar2src_trans)
+      new_tar2src_trans, fitness, information_icp = self.icp(new_pcd, old_pcds[target_id], tar2src_trans)
       if i == 0:
+        if fitness < self.fitness_bar:
+          new_tar2src_trans = tar2src_trans
+          uncertian = False
+        else:
+          uncertian = False
         new_obj2world_trans = np.linalg.inv(
           new_tar2src_trans) @ target_trans
         pose_graph_in_obj.nodes.append(
           o3d.pipelines.registration.PoseGraphNode(
             new_obj2world_trans))
-
         pose_graph_in_obj.edges.append(
           o3d.pipelines.registration.PoseGraphEdge(
-            target_id, source_id, new_tar2src_trans, information_icp,uncertain=False))
+            target_id, source_id, new_tar2src_trans, information_icp,uncertain=uncertian))
       else:
         pose_graph_in_obj.edges.append(
           o3d.pipelines.registration.PoseGraphEdge(
@@ -107,7 +113,7 @@ class RollerSLAM:
       target_pcd = pcds[target_id]
       target_trans = pose_graph.nodes[target_id].pose
       tar2src_trans = target_trans @ np.linalg.inv(source_trans)
-      new_tar2src_trans, information_icp = self.icp(source_pcd, target_pcd, tar2src_trans)
+      new_tar2src_trans, fitness, information_icp = self.icp(source_pcd, target_pcd, tar2src_trans)
       pose_graph.edges.append(
         o3d.pipelines.registration.PoseGraphEdge(
           target_id, source_id, new_tar2src_trans, information_icp, uncertain=True))

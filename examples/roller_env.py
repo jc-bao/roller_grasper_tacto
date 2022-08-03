@@ -693,8 +693,8 @@ def main(obj_urdf: str = 'assets/objects/curved_cube.urdf', file_name: str = 'de
     act['wrist_vel'] = 0.
     act['pitch_l_vel'] = 0.
     act['pitch_r_vel'] = 0.
-    act['roll_l_vel'] = 1
-    act['roll_r_vel'] = 1
+    act['roll_l_vel'] = 0.5
+    act['roll_r_vel'] = 0.5
     obs, rew, done, info = env.step(act)
     # rendering items
     camera_img.append(obs.camera.color)

@@ -100,6 +100,21 @@ pip install scipyplot deepdish tacto
 - [ ] Add blender to simulation
 - [ ] Reconstruct the object from tactile sensor
 
+## Hardware Deployment
+
+1. get getsight depth image
+   1. Requirement: from 0 -> max_depth
+2. generate esistimated angle
+3. run the test code in test set
+
+
+Possible Gaps
+* The Gel is rounded but our sensor get a plane
+* The Gel has less depth
+* The Gel has less contact height
+![](https://tva1.sinaimg.cn/large/e6c9d24egy1h4u0rhlu7qg20sg0sg4qp.gif)
+
+
 ## Details
 
 * roller size: R=0.02m H=0.05m
