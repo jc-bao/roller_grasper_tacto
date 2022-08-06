@@ -13,6 +13,7 @@ from tqdm import tqdm
 from PIL import Image
 import open3d as o3d
 import dcargs
+from scipy.io import savemat
 
 from utils import Camera, convert_obs_to_obs_space, create_o3dvis, unifrom_sample_quaternion, char_to_pixels, pairwise_registration
 from roller import RollerGrapser
@@ -122,6 +123,10 @@ class RollerEnv(gym.Env):
       'obj_trans': list(), 
       'real_delta_trans': list(),
       'estimated_delta_trans': list()
+    }
+    self.mat_data = {
+      'depth': list(), 
+      'pose': list()
     }
 
   def step(self, action):
@@ -377,12 +382,6 @@ class RollerEnv(gym.Env):
           raise NotImplementedError
         world2camTrans = np.linalg.inv(cam2worldTrans)
 
-        if cam_id == 1:
-          self.data['right_cam'].append(depth)
-          self.data['world2rightcam_trans'].append(world2camTrans)
-        else:
-          self.data['left_cam'].append(depth)
-          self.data['world2leftcam_trans'].append(world2camTrans)
 
         pcd = o3d.geometry.PointCloud.create_from_depth_image(
          depth_16, self.pinhole_camera_intrinsic, depth_scale=65535/self.sensor_far, project_valid_depth_only=True) 
@@ -390,7 +389,6 @@ class RollerEnv(gym.Env):
         pcd_world = o3d.geometry.PointCloud.create_from_depth_image(
          depth_16, self.pinhole_camera_intrinsic, world2camTrans, depth_scale=65535/self.sensor_far, project_valid_depth_only=True) 
         
-
         # object pose relative to camera
         real_obj2worldTrans = np.zeros((4, 4))
         real_obj2worldTrans[:3, :3] = R.from_quat(
@@ -408,6 +406,15 @@ class RollerEnv(gym.Env):
         esitimated_obj2worldTrans[:3, 3] = [0, 0, 0]
         esitimated_obj2worldTrans[3, 3] = 1
         esitimated_world2objTrans = np.linalg.inv(esitimated_obj2worldTrans)
+
+        if cam_id == 1:
+          self.data['right_cam'].append(depth)
+          self.data['world2rightcam_trans'].append(world2camTrans)
+        else:
+          self.data['left_cam'].append(depth)
+          self.data['world2leftcam_trans'].append(world2camTrans)
+        self.mat_data['depth'].append(depth)
+        self.mat_data['pose'].append(cam2worldTrans*np.linalg.inv(real_obj2worldTrans))
 
         # draw point cloud in camera frame
         self.o3dvis.add_geometry(pcd)
@@ -729,6 +736,9 @@ def main(obj_urdf: str = 'assets/objects/curved_cube.urdf', file_name: str = 'de
 
   with open('../test/assets/data.pkl', 'wb') as f:
     dill.dump(env.data, f)
+  savemat('../test/assets/data.mat',env.mat_data)
+  
+
 
   env.close()
 
