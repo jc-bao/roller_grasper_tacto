@@ -51,13 +51,14 @@ class RollerSLAM:
     return pcd_down
 
   def icp(self, source_pcd:o3d.geometry.PointCloud, target_pcd:o3d.geometry.PointCloud, tar2src_trans: np.ndarray) -> Tuple[np.ndarray, float, np.ndarray]:
-    icp_coarse = o3d.pipelines.registration.registration_icp(
-        source_pcd, target_pcd, self.max_correspondence_distance_coarse,
-        tar2src_trans,
-        o3d.pipelines.registration.TransformationEstimationPointToPlane())
+    # icp_coarse = o3d.pipelines.registration.registration_icp(
+    #     source_pcd, target_pcd, self.max_correspondence_distance_coarse,
+    #     tar2src_trans,
+    #     o3d.pipelines.registration.TransformationEstimationPointToPlane())
     icp_fine = o3d.pipelines.registration.registration_icp(
       source_pcd, target_pcd, self.max_correspondence_distance_fine,
-      icp_coarse.transformation,  # Note: tar2src
+      # icp_coarse.transformation,  # Note: tar2src
+      tar2src_trans,  # Note: tar2src
       o3d.pipelines.registration.TransformationEstimationPointToPlane())
     information_icp = o3d.pipelines.registration.get_information_matrix_from_point_clouds(
       source_pcd, target_pcd, self.max_correspondence_distance_fine,

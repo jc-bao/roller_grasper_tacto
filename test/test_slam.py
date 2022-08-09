@@ -22,7 +22,7 @@ def rollerSLAM():
 
 @pytest.fixture
 def data():
-  with open('assets/data_25664_rdep2e-3.pkl', 'rb') as f:
+  with open('assets/data_usb.pkl', 'rb') as f:
     data = dill.load(f)
   '''
       'left_cam'

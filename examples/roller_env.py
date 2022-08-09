@@ -312,8 +312,8 @@ class RollerEnv(gym.Env):
         color = self.obs.sensor[i].color
         depth = self.obs.sensor[i].depth
         shape_x, shape_y = depth.shape[:2]
-        rgb_array[shape_x*i:shape_x*(i+1), :shape_y, :] = color
-        rgb_array[shape_x*i:shape_x*(i+1), shape_y:shape_y*2,
+        rgb_array[shape_x*2*i:shape_x*(2*i+1), :shape_y, :] = color
+        rgb_array[shape_x*(2*i+1):shape_x*2*(i+1), :shape_y,
                   :] = np.expand_dims(depth*256, 2).repeat(3, axis=2)
         txt = char_to_pixels(f'GEL{i+1}')
         rgb_array[shape_x*i:shape_x*i+16, :64, :] = txt
@@ -687,7 +687,7 @@ register(
 )
 
 
-def main(obj_urdf: str = 'assets/objects/curved_cube.urdf', file_name: str = 'debug', n: int = 120):
+def main(obj_urdf: str = 'assets/objects/usb.urdf', file_name: str = 'debug', n: int = 120):
   env = RollerEnv(obj_urdf=obj_urdf)
   obs = env.reset()
   imgs = []
