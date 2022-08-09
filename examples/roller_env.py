@@ -738,8 +738,6 @@ def main(obj_urdf: str = 'assets/objects/usb.urdf', file_name: str = 'debug', n:
     dill.dump(env.data, f)
   savemat('../test/assets/data.mat',env.mat_data)
   
-
-
   env.close()
 
 
