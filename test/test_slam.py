@@ -108,6 +108,8 @@ def test_merge_pcds(rollerSLAM, data):
         print('optimize...')
         pose_graph = rollerSLAM.optimize_graph(pose_graph)
 
+  pcds = rollerSLAM.create_pcd(old_pcds, [np.linalg.inv(last_old_trans)@ n.pose for n in pose_graph.nodes])
+  o3d.io.write_point_cloud('results/final_pcd.pcd', pcds)
   colors_img = [Image.fromarray(c) for c in colors]
   # visualize result
   colors_img[0].save('results/test_merge_pcds.gif', save_all=True, append_images=colors_img[1:])

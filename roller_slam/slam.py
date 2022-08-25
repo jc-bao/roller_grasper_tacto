@@ -1,4 +1,3 @@
-from doctest import UnexpectedException
 from typing import Tuple, List
 import numpy as np
 import open3d as o3d
@@ -157,3 +156,12 @@ class RollerSLAM:
     color = (np.asarray(color)*256).astype(np.uint8)
     self.o3dvis.clear_geometries()
     return color
+
+  def create_pcd(self, pcds: List[o3d.geometry.PointCloud], trans: List[np.ndarray]) -> np.ndarray:
+    obj2world_trans = trans[-1]
+    world2obj_trans = np.linalg.inv(obj2world_trans)
+    pcd_new = o3d.geometry.PointCloud()
+    for pcd, tr in zip(pcds, trans):
+      world2obj_trans = np.linalg.inv(tr)
+      pcd_new += deepcopy(pcd).transform(world2obj_trans)
+    return pcd_new
