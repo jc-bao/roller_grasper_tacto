@@ -140,7 +140,15 @@ def main():
     obj_err_mu[i] = obj_mu
     obj_err_var[i] = obj_var
   data = np.concatenate([all_ori, np.expand_dims(obj_err_mu, axis=1)], axis=1)
-  plotter.plot_3d(data, f'section errors, ori={ori}', c=obj_err_var)
+  plotter.plot_3d(data, f'object errors, ori={ori}', c=obj_err_var)
+
+  # surrogate function
+  obj_aq = obj_err_mu + obj_err_var * 10
+  data = np.concatenate([all_ori, np.expand_dims(obj_aq, axis=1)], axis=1)
+  plotter.plot_3d(data, f'surrogate function, ori={ori}')
+
+  # find the best orientation
+  best_ori_idx = np.argmax(obj_aq)
 
   # evaluate the shape
   # Question: use joint distribution v.s. use marginal distribution to evaluate model?
