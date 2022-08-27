@@ -22,14 +22,21 @@ def get_projection_shape(gp_shape, orn):
 def eval_projection(projection_shape, hole_shape):
   return False
 
-def eval_shape(gp_shape, hole_shape):
-  errs = []
-  for orn in all_ori:
-    # get the projection shape
-    projection_shape = get_projection_shape(gp_shape, orn)
-    # check if the projection shape is a hole
-    errs.append(eval_projection(projection_shape, hole_shape))
-  return errs
+def eval_shape(sec_mu, sec_var):
+  x_min = torch.linspace(-2, 2, 11).unsqueeze(-1)
+  dist = torch.tensor(sec_mu)
+  dist_std = torch.sqrt(torch.tensor(sec_var))
+  x_normed = (x_min - dist) / dist_std # Tensor(n_x, n_theta)
+  log_cdf = gpytorch.log_normal_cdf(x_normed)
+  mask = log_cdf > -5
+  cdf = torch.zeros_like(log_cdf)
+  cdf[mask] = torch.exp(log_cdf[mask])
+  cdf = torch.prod(1 - cdf, dim=1) # Tensor(n_x)
+  pdf = cdf[:-1] - cdf[1:]
+  pdf = pdf / pdf.sum()
+  mean = torch.sum(pdf * x_min[:-1,0])
+  var = torch.sum(pdf * ((x_min[:-1,0] - mean)**2))
+  return mean, var
 
 def eval_section(y_mu, y_var, hole_shape_polar):
   assert y_mu.shape[0] == hole_shape_polar.shape[
@@ -109,8 +116,9 @@ def main():
   y_pred_mu_new = y_pred_mu.reshape(n_theta, n_phi).detach().numpy()
   y_pred_var_new = y_pred_var.reshape(n_theta, n_phi).detach().numpy()
   # try different object orientations
-  for ori in all_ori:
-    ori = np.array([0,0])
+  obj_err_mu = np.zeros(n_theta*n_phi)
+  obj_err_var = np.zeros(n_theta*n_phi)
+  for i, ori in enumerate(all_ori):
     x_pred_new = (x_pred + ori).reshape(n_theta, n_phi, 2).detach().numpy()
     x_pred_new[:,:,0] = (x_pred_new[:,:,0]+np.pi) % (2 * np.pi) - np.pi
     x_pred_new[:,:,1] = (x_pred_new[:,:,1]+np.pi/2) % np.pi - np.pi/2
@@ -120,7 +128,7 @@ def main():
     y_pred_var_ori = y_pred_var_new[theta_argsort, phi_argsort]
     # evaluate different sections
     sec_errs_mu, sec_errs_var = [], []
-    for section_phi_idx in range(n_phi//2, n_phi//2+1):
+    for section_phi_idx in range(n_phi):
       section_y_mu = y_pred_mu_ori[:, section_phi_idx] * np.cos(phi[section_phi_idx])
       section_y_var = y_pred_var_ori[:, section_phi_idx] * (np.cos(phi[section_phi_idx])**2)
       err_mu, err_var = eval_section(section_y_mu, section_y_var, hole_shape_polar)
@@ -128,7 +136,11 @@ def main():
       sec_errs_var.append(err_var)
     sec_errs_mu = np.array(sec_errs_mu)
     sec_errs_var = np.array(sec_errs_var)
-    plotter.plot_2d(np.stack((phi[[5]], sec_errs_mu), axis=-1), f'section errors, ori={ori}', c=sec_errs_var)
+    obj_mu, obj_var = eval_shape(sec_errs_mu, sec_errs_var)
+    obj_err_mu[i] = obj_mu
+    obj_err_var[i] = obj_var
+  data = np.concatenate([all_ori, np.expand_dims(obj_err_mu, axis=1)], axis=1)
+  plotter.plot_3d(data, f'section errors, ori={ori}', c=obj_err_var)
 
   # evaluate the shape
   # Question: use joint distribution v.s. use marginal distribution to evaluate model?

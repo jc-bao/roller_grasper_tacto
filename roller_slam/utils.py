@@ -38,7 +38,7 @@ class Plotter():
     self.current_fig_id += 1
     if c is None:
       ax.plot(data[:,0], data[:,1])
-      ax.set_box_aspect(np.ptp(data[:,0])/np.ptp(data[:,1]))
+      # ax.set_box_aspect(np.ptp(data[:,0])/np.ptp(data[:,1]))
     else:
       cm = plt.cm.get_cmap('viridis')
       sc = ax.scatter(data[:,0], data[:,1], s=10, cmap=cm, c=c)
@@ -71,7 +71,7 @@ class Plotter():
     ax.set_ylabel('y')
     ax.set_zlabel('z')
     ax.set_title(title)
-    ax.set_box_aspect((np.ptp(data[:,0]), np.ptp(data[:,1]), np.ptp(data[:,2])))
+    # ax.set_box_aspect((np.ptp(data[:,0]), np.ptp(data[:,1]), np.ptp(data[:,2])))
 
   def save(self, path):
     self.fig.savefig(path)
