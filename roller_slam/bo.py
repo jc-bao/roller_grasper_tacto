@@ -59,6 +59,7 @@ def eval_section(y_mu, y_var, hole_shape_polar):
 def conduct_bo(errs):
   return np.max(errs.std())
 
+
 def main():
   # object SLAM parameters
   n_phi = 10
@@ -67,10 +68,10 @@ def main():
 
   # num_plts = 3
   # fig = plt.figure(figsize=(5, 5*num_plts))
-  plotter = Plotter(num_figs=16)
+  plotter = Plotter(num_figs=32)
   # load the data
   points_normed = load_data('../test/assets/bottle.ply')
-  plotter.plot_3d(points_normed, 'bottle point clouds')
+  plotter.plot_3d([points_normed], 'bottle point clouds')
 
   # get the hole shape
   hole_euler = np.array([0, 0, 0])
@@ -87,70 +88,82 @@ def main():
   # interpolate the hole shape to the the same resolution as the evaluation grid
   hole_shape_interp = interp1d(hole_shape_polar[:, 0], hole_shape_polar[:, 1], kind='cubic')
   hole_shape_polar= np.stack([np.linspace(-np.pi, np.pi, n_theta), hole_shape_interp(np.linspace(-np.pi, np.pi, n_theta))], axis=1)
-  plotter.plot_2d(hole_shape, 'hole shape')
+  plotter.plot_2d([hole_shape], 'hole shape')
   plotter.plot_polar(hole_shape_polar, 'hole shape polar')
 
-  # explore the object
   explore_section_pos = np.array([0,0,0]) # explore the center section first
-  section_points = get_section_points(points_normed, explore_section_pos)
-  plotter.plot_3d(section_points, f'section points, orn={explore_section_pos}')
+  for explore_step in range(3):
+    # explore the object
+    if explore_step == 0:
+      section_points = get_section_points(points_normed, explore_section_pos)
+    else:
+      section_points = np.concatenate(
+        [section_points, get_section_points(points_normed, explore_section_pos)], axis=0)
+    plotter.plot_3d([section_points], f'section points, orn={explore_section_pos}')
 
-  # fit a probabilistic model to the section points
-  section_point_spherical = cartisian_to_spherical(section_points)
-  section_point_tensor = torch.tensor(section_point_spherical)
-  gp_shape = GaussianProcess(section_point_tensor[:,:2], section_point_tensor[:,2])
-  x_pred, y_pred_mu, y_pred_var = gp_shape.predict(step=angle_step)
-  pred_point_spherical = torch.cat((x_pred, y_pred_mu.unsqueeze(-1)), dim=-1).detach().numpy()
-  pred_point = spherical_to_cartisian(pred_point_spherical)
-  pred_var = y_pred_var.detach().numpy()
-  plotter.plot_3d(pred_point.reshape(-1,3), 'gp shape', c=pred_var.flatten())
+    # fit a probabilistic model to the section points
+    section_point_spherical = cartisian_to_spherical(section_points)
+    section_point_tensor = torch.tensor(section_point_spherical)
+    gp_shape = GaussianProcess(section_point_tensor[:,:2], section_point_tensor[:,2])
+    x_pred, y_pred_mu, y_pred_var = gp_shape.predict(step=angle_step)
+    pred_point_spherical = torch.cat((x_pred, y_pred_mu.unsqueeze(-1)), dim=-1).detach().numpy()
+    pred_point = spherical_to_cartisian(pred_point_spherical)
+    pred_var = y_pred_var.detach().numpy()
+    plotter.plot_3d([pred_point.reshape(-1,3)], 'gp shape', c=pred_var.flatten())
 
-  # evaluate the shape
-  # enumerate all possible orientations
-  theta = np.arange(-np.pi, np.pi, angle_step)
-  phi = np.arange(-np.pi/2, np.pi/2, angle_step)
-  all_ori = np.stack(np.meshgrid(theta, phi), axis=-1).reshape(-1, 2)
-  y_pred_mu_new = y_pred_mu.reshape(n_theta, n_phi).detach().numpy()
-  y_pred_var_new = y_pred_var.reshape(n_theta, n_phi).detach().numpy()
-  # try different object orientations
-  obj_err_mu = np.zeros(n_theta*n_phi)
-  obj_err_var = np.zeros(n_theta*n_phi)
-  for i, ori in enumerate(all_ori):
-    x_pred_new = (x_pred + ori).reshape(n_theta, n_phi, 2).detach().numpy()
-    x_pred_new[:,:,0] = (x_pred_new[:,:,0]+np.pi) % (2 * np.pi) - np.pi
-    x_pred_new[:,:,1] = (x_pred_new[:,:,1]+np.pi/2) % np.pi - np.pi/2
-    theta_argsort = np.argsort(x_pred_new[:,:,0], axis=0)
-    phi_argsort = np.argsort(x_pred_new[:,:,1], axis=1)
-    y_pred_mu_ori = y_pred_mu_new[theta_argsort, phi_argsort]
-    y_pred_var_ori = y_pred_var_new[theta_argsort, phi_argsort]
-    # debug: visualize new shape
-    # data = np.concatenate([x_pred.reshape(-1,2), np.expand_dims(y_pred_mu_ori.flatten(), axis=1)], axis=1)
-    # data = spherical_to_cartisian(data)
-    # plotter.plot_3d(data, f'gp shape, orn={ori}')
-    # evaluate different sections
-    sec_errs_mu, sec_errs_var = [], []
-    for section_phi_idx in range(n_phi):
-      section_y_mu = y_pred_mu_ori[:, section_phi_idx] * np.cos(phi[section_phi_idx])
-      section_y_var = y_pred_var_ori[:, section_phi_idx] * (np.cos(phi[section_phi_idx])**2)
-      err_mu, err_var = eval_section(section_y_mu, section_y_var, hole_shape_polar)
-      sec_errs_mu.append(err_mu)
-      sec_errs_var.append(err_var)
-    sec_errs_mu = np.array(sec_errs_mu)
-    sec_errs_var = np.array(sec_errs_var)
-    obj_mu, obj_var = eval_shape(sec_errs_mu, sec_errs_var)
-    obj_err_mu[i] = obj_mu
-    obj_err_var[i] = obj_var
-  data = np.concatenate([all_ori, np.expand_dims(obj_err_mu, axis=1)], axis=1)
-  plotter.plot_3d(data, f'object errors, ori={ori}', c=obj_err_var, axis_name=['theta', 'phi', 'margin'])
+    # evaluate the shape
+    # enumerate all possible orientations
+    theta = np.arange(-np.pi, np.pi, angle_step)
+    phi = np.arange(-np.pi/2, np.pi/2, angle_step)
+    all_ori = np.stack(np.meshgrid(theta, phi), axis=-1).reshape(-1, 2)
+    y_pred_mu_new = y_pred_mu.reshape(n_theta, n_phi).detach().numpy()
+    y_pred_var_new = y_pred_var.reshape(n_theta, n_phi).detach().numpy()
+    # try different object orientations
+    sec_err_mu = np.zeros((n_theta*n_phi, n_phi)) # ndarray(n_orientation, n_section)
+    sec_err_var = np.zeros((n_theta*n_phi, n_phi))
+    obj_err_mu = np.zeros(n_theta*n_phi) 
+    obj_err_var = np.zeros(n_theta*n_phi)
+    for i, ori in enumerate(all_ori):
+      x_pred_new = (x_pred + ori).reshape(n_theta, n_phi, 2).detach().numpy()
+      x_pred_new[:,:,0] = (x_pred_new[:,:,0]+np.pi) % (2 * np.pi) - np.pi
+      x_pred_new[:,:,1] = (x_pred_new[:,:,1]+np.pi/2) % np.pi - np.pi/2
+      theta_argsort = np.argsort(x_pred_new[:,:,0], axis=0)
+      phi_argsort = np.argsort(x_pred_new[:,:,1], axis=1)
+      y_pred_mu_ori = y_pred_mu_new[theta_argsort, phi_argsort]
+      y_pred_var_ori = y_pred_var_new[theta_argsort, phi_argsort]
+      # evaluate different sections
+      for section_phi_idx in range(n_phi):
+        section_y_mu = y_pred_mu_ori[:, section_phi_idx] * np.cos(phi[section_phi_idx])
+        section_y_var = y_pred_var_ori[:, section_phi_idx] * (np.cos(phi[section_phi_idx])**2)
+        err_mu, err_var = eval_section(section_y_mu, section_y_var, hole_shape_polar)
+        sec_err_mu[i, section_phi_idx] = err_mu
+        sec_err_var[i, section_phi_idx] = err_var
+      obj_mu, obj_var = eval_shape(sec_err_mu[i], sec_err_var[i])
+      obj_err_mu[i] = obj_mu
+      obj_err_var[i] = obj_var
+    data = np.concatenate([all_ori, np.expand_dims(obj_err_mu, axis=1)], axis=1)
+    plotter.plot_3d([data], f'object errors', c=obj_err_var, axis_name=['theta', 'phi', 'margin'])
 
-  # surrogate function
-  obj_aq = obj_err_mu + obj_err_var * 10
-  max_pos = np.argmax(obj_aq)
-  data = np.concatenate([all_ori, np.expand_dims(obj_aq, axis=1)], axis=1)
-  plotter.plot_3d(data, f'surrogate function, ori={ori}', axis_name=['theta', 'phi', 'aq_value'])
+    # surrogate function
+    obj_aq = obj_err_mu + obj_err_var * 10
+    max_pos = np.argmax(obj_aq)
+    best_ori = all_ori[max_pos]
+    data = np.concatenate([all_ori, np.expand_dims(obj_aq, axis=1)], axis=1)
+    plotter.plot_3d([data, data[[max_pos]]], f'aquisition function, \n best_ori={best_ori}', axis_name=['theta', 'phi', 'aq_value'])
 
-  # find the best orientation
-  best_ori_idx = np.argmax(obj_aq)
+    # evaluate the section
+    best_sec_err_mu = sec_err_mu[max_pos]
+    best_sec_err_var = sec_err_var[max_pos]
+    data = np.stack([phi, -best_sec_err_mu], axis=1)
+    plotter.plot_2d([data], f'-section errors', c=best_sec_err_var, axis_name=['phi', 'margin'])
+    sec_aq = -best_sec_err_mu + best_sec_err_var * 10
+    max_pos = np.argmax(sec_aq)
+    best_sec_phi = phi[max_pos]
+    data = np.stack([phi, sec_aq], axis=1)
+    plotter.plot_2d([data, data[[max_pos]]], f'section aquisition function, \n best_sec_phi={best_sec_phi}', axis_name=['phi', 'aq_value'])
+
+    # next exploration part
+    explore_section_pos = np.append(best_ori, np.mean(best_sec_err_mu)*np.sin(best_sec_phi))
 
   # evaluate the shape
   # Question: use joint distribution v.s. use marginal distribution to evaluate model?

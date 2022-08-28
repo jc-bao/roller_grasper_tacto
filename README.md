@@ -83,8 +83,9 @@ pip install scipyplot deepdish tacto
 - [x] Wrapper up reconstruction function
   - [x] wrap up functions (2022.7.31)
   - [x] test functions and data wrap up (2022.8.1)
-  - [ ] solve the problem of phi close to each other. (2022.8.27)
+  - [x] solve the problem of phi close to each other. (caused by not clean the debug code timely) (2022.8.27)
   - [ ] solve the problem of be optimistic of unexplored area. (2022.8.27)
+    (reason: the section far away from the center, has large phi, thus its variance is constrained. solution: make the initial guess more pessimistic)
 - [ ] Efficient way to detect close loop
 - [ ] Using ICP to matching points
 

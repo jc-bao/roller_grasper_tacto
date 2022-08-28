@@ -81,10 +81,10 @@ class RollerEnv(gym.Env):
       'roll_r_angle': 0,
     })
     self.robot = RollerGrapser(robot_params, init_state)
-    self.recorder.register_object(self.robot.id, '/juno/u/chaoyi/rl/roller_grasper_tacto/examples/assets/robots/roller_blender.urdf')
+    self.recorder.register_object(self.robot.id, '/Users/reedpan/Desktop/Research/roller_grasper_tacto/examples/assets/robots/roller_blender.urdf')
     self.obj = px.Body(urdf_path=obj_urdf,
                        base_position=[0.000, -0.04, 0.08], global_scaling=1)
-    self.recorder.register_object(self.obj.id, '/juno/u/chaoyi/rl/roller_grasper_tacto/examples/assets/objects/usb.urdf')
+    self.recorder.register_object(self.obj.id, '/Users/reedpan/Desktop/Research/roller_grasper_tacto/examples/assets/objects/usb.urdf')
     self.obj_copy = px.Body(urdf_path=obj_urdf,
                             base_position=[0.0, 0.15, 0.13], global_scaling=1, use_fixed_base=True)
     self.obj_target = px.Body(urdf_path=obj_urdf,
@@ -92,7 +92,7 @@ class RollerEnv(gym.Env):
     self.ghost_obj = px.Body(urdf_path='assets/objects/rounded_cube_ghost.urdf',
                              base_position=[0.000, 0, 0.18], global_scaling=1, use_fixed_base=True)
     self.obj_base = px.Body(urdf_path='assets/objects/usb_base.urdf', base_position=[0.0, 0.0, 0.04], global_scaling=1, use_fixed_base=True)
-    self.recorder.register_object(self.obj_base.id, '/juno/u/chaoyi/rl/roller_grasper_tacto/examples/assets/objects/usb_base.urdf')
+    self.recorder.register_object(self.obj_base.id, '/Users/reedpan/Desktop/Research/roller_grasper_tacto/examples/assets/objects/usb_base.urdf')
     # sensor
     self.sensor = tacto.Sensor(
       width=self.sensor_x, height=self.sensor_y, visualize_gui=False, config_path='assets/sensors/roller.yml')
@@ -442,7 +442,7 @@ def main(obj_urdf: str = 'assets/objects/usb.urdf', file_name: str = 'debug'):
         act['roll_r_vel'] = 0.5
       elif k == 'move2ground2':
         robot_pos = np.asarray(env.robot.get_base_pose()[0])
-        delta_pos = np.asarray([0,0,env.obj.init_base_position[2]+0.19]) - robot_pos
+        delta_pos = np.asarray([0,0,env.obj.init_base_position[2]+0.20]) - robot_pos
         robot_pos += np.clip(delta_pos, -0.005, 0.005)
         env.robot.set_base_pose(robot_pos, env.robot.get_base_pose()[1])  
         env.obj.set_base_pose(robot_pos-np.asarray([0, 0, 0.190]), np.asarray([0.0,-0.707,0.0,0.707]))

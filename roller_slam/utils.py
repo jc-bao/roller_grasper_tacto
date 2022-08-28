@@ -33,18 +33,19 @@ class Plotter():
     self.current_fig_id = 1
     self.fig = plt.figure(figsize=(5, 5*num_figs))
 
-  def plot_2d(self, data, title, c = None):
+  def plot_2d(self, datas, title, c = None, axis_name = ['x', 'y']):
     ax = self.fig.add_subplot(self.num_figs,1,self.current_fig_id)
     self.current_fig_id += 1
-    if c is None:
-      ax.plot(data[:,0], data[:,1])
-      # ax.set_box_aspect(np.ptp(data[:,0])/np.ptp(data[:,1]))
-    else:
-      cm = plt.cm.get_cmap('viridis')
-      sc = ax.scatter(data[:,0], data[:,1], s=10, cmap=cm, c=c)
-      plt.colorbar(sc)
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
+    for data in datas:
+      if c is None:
+        ax.plot(data[:,0], data[:,1])
+        # ax.set_box_aspect(np.ptp(data[:,0])/np.ptp(data[:,1]))
+      else:
+        cm = plt.cm.get_cmap('viridis')
+        sc = ax.scatter(data[:,0], data[:,1], s=10, cmap=cm, c=c)
+        plt.colorbar(sc)
+    ax.set_xlabel(axis_name[0])
+    ax.set_ylabel(axis_name[1])
     ax.set_title(title)
 
   def plot_polar(self, data, title, c = None):
@@ -58,15 +59,16 @@ class Plotter():
       plt.colorbar(sc)
     ax.set_title(title)
 
-  def plot_3d(self, data, title, c = None, axis_name = ['x', 'y', 'z']):
+  def plot_3d(self, datas, title, c = None, axis_name = ['x', 'y', 'z']):
     ax = self.fig.add_subplot(self.num_figs,1,self.current_fig_id, projection='3d')
     self.current_fig_id += 1
-    if c is None:
-      ax.scatter(data[:,0], data[:,1], data[:,2])
-    else:
-      cm = plt.cm.get_cmap('viridis')
-      sc = ax.scatter(data[:,0], data[:,1], data[:,2], s=10, cmap=cm, c=c)
-      plt.colorbar(sc)
+    for data in datas:
+      if c is None:
+        ax.scatter(data[:,0], data[:,1], data[:,2])
+      else:
+        cm = plt.cm.get_cmap('viridis')
+        sc = ax.scatter(data[:,0], data[:,1], data[:,2], s=10, cmap=cm, c=c)
+        plt.colorbar(sc)
     ax.set_xlabel(axis_name[0])
     ax.set_ylabel(axis_name[1])
     ax.set_zlabel(axis_name[2])
