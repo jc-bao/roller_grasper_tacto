@@ -58,7 +58,7 @@ class Plotter():
       plt.colorbar(sc)
     ax.set_title(title)
 
-  def plot_3d(self, data, title, c = None):
+  def plot_3d(self, data, title, c = None, axis_name = ['x', 'y', 'z']):
     ax = self.fig.add_subplot(self.num_figs,1,self.current_fig_id, projection='3d')
     self.current_fig_id += 1
     if c is None:
@@ -67,9 +67,9 @@ class Plotter():
       cm = plt.cm.get_cmap('viridis')
       sc = ax.scatter(data[:,0], data[:,1], data[:,2], s=10, cmap=cm, c=c)
       plt.colorbar(sc)
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    ax.set_zlabel('z')
+    ax.set_xlabel(axis_name[0])
+    ax.set_ylabel(axis_name[1])
+    ax.set_zlabel(axis_name[2])
     ax.set_title(title)
     # ax.set_box_aspect((np.ptp(data[:,0]), np.ptp(data[:,1]), np.ptp(data[:,2])))
 

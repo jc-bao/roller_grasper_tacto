@@ -43,7 +43,6 @@ def eval_section(y_mu, y_var, hole_shape_polar):
       0], "The number of points in the hole shape and the Gaussian Process must be the same"
   x_min = torch.linspace(-2, 2, 101).unsqueeze(-1)
   dist = torch.tensor(hole_shape_polar[:,1] - y_mu)
-  dist = torch.zeros_like(dist)
   dist_std = torch.sqrt(torch.tensor(y_var))
   x_normed = (x_min - dist) / dist_std # Tensor(n_x, n_theta)
   log_cdf = gpytorch.log_normal_cdf(x_normed)
@@ -94,8 +93,6 @@ def main():
   # explore the object
   explore_section_pos = np.array([0,0,0]) # explore the center section first
   section_points = get_section_points(points_normed, explore_section_pos)
-  section_points = cartisian_to_spherical(section_points)
-  section_points = spherical_to_cartisian(section_points)
   plotter.plot_3d(section_points, f'section points, orn={explore_section_pos}')
 
   # fit a probabilistic model to the section points
@@ -126,6 +123,10 @@ def main():
     phi_argsort = np.argsort(x_pred_new[:,:,1], axis=1)
     y_pred_mu_ori = y_pred_mu_new[theta_argsort, phi_argsort]
     y_pred_var_ori = y_pred_var_new[theta_argsort, phi_argsort]
+    # debug: visualize new shape
+    # data = np.concatenate([x_pred.reshape(-1,2), np.expand_dims(y_pred_mu_ori.flatten(), axis=1)], axis=1)
+    # data = spherical_to_cartisian(data)
+    # plotter.plot_3d(data, f'gp shape, orn={ori}')
     # evaluate different sections
     sec_errs_mu, sec_errs_var = [], []
     for section_phi_idx in range(n_phi):
@@ -140,12 +141,13 @@ def main():
     obj_err_mu[i] = obj_mu
     obj_err_var[i] = obj_var
   data = np.concatenate([all_ori, np.expand_dims(obj_err_mu, axis=1)], axis=1)
-  plotter.plot_3d(data, f'object errors, ori={ori}', c=obj_err_var)
+  plotter.plot_3d(data, f'object errors, ori={ori}', c=obj_err_var, axis_name=['theta', 'phi', 'margin'])
 
   # surrogate function
   obj_aq = obj_err_mu + obj_err_var * 10
+  max_pos = np.argmax(obj_aq)
   data = np.concatenate([all_ori, np.expand_dims(obj_aq, axis=1)], axis=1)
-  plotter.plot_3d(data, f'surrogate function, ori={ori}')
+  plotter.plot_3d(data, f'surrogate function, ori={ori}', axis_name=['theta', 'phi', 'aq_value'])
 
   # find the best orientation
   best_ori_idx = np.argmax(obj_aq)

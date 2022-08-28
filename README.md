@@ -69,10 +69,10 @@ pip install scipyplot deepdish tacto
 ### L1
 
 - [x] Replace Sensor with Roller (2022.07.21)
-- [ ] Handcrafted policy for reorientation
+- [x] Handcrafted policy for reorientation
   - [x] Single rotation handcrafted policy (2022.7.22)
   - [x] attach sensor to fixed joint (2022.7.23)
-  - [ ] Compositonal handcrafted policy
+  - [x] Compositonal handcrafted policy
 - [x] Reconstruct the object from depth image
   - [x] With wide camera range (2022.7.27)
     - [x] With true object position
@@ -80,10 +80,11 @@ pip install scipyplot deepdish tacto
   - [x] With small camera range (2022.7.27)
   - [x] With moving camera (2022.7.27)
 - [x] Reconstruct of different shapes (e.g. EDGA dataset) (2022.7.28)
-- [ ] Wrapper up reconstruction function
+- [x] Wrapper up reconstruction function
   - [x] wrap up functions (2022.7.31)
   - [x] test functions and data wrap up (2022.8.1)
-  - [ ] 
+  - [ ] solve the problem of phi close to each other. (2022.8.27)
+  - [ ] solve the problem of be optimistic of unexplored area. (2022.8.27)
 - [ ] Efficient way to detect close loop
 - [ ] Using ICP to matching points
 
