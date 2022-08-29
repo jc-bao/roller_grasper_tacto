@@ -91,14 +91,10 @@ def main():
   plotter.plot_2d([hole_shape], 'hole shape')
   plotter.plot_polar(hole_shape_polar, 'hole shape polar')
 
-  explore_section_pos = np.array([0,0,0]) # explore the center section first
+  explore_section_pos = [np.array([0,0,0])] # explore the center section first
   for explore_step in range(3):
     # explore the object
-    if explore_step == 0:
-      section_points = get_section_points(points_normed, explore_section_pos)
-    else:
-      section_points = np.concatenate(
-        [section_points, get_section_points(points_normed, explore_section_pos)], axis=0)
+    section_points = get_section_points(points_normed, explore_section_pos)
     plotter.plot_3d([section_points], f'section points, orn={explore_section_pos}')
 
     # fit a probabilistic model to the section points
@@ -142,7 +138,11 @@ def main():
       obj_err_mu[i] = obj_mu
       obj_err_var[i] = obj_var
     data = np.concatenate([all_ori, np.expand_dims(obj_err_mu, axis=1)], axis=1)
-    plotter.plot_3d([data], f'object errors', c=obj_err_var, axis_name=['theta', 'phi', 'margin'])
+    mll_ori_idx = np.argmax(obj_err_mu)
+    mll_ori = all_ori[mll_ori_idx]
+    mll_ori_err_mu = obj_err_mu[mll_ori_idx]
+    mll_ori_err_var = obj_err_var[mll_ori_idx]
+    plotter.plot_3d([data], f'object errors, \n best_ori={mll_ori}, \n mu={mll_ori_err_mu:.2f}, \n var={mll_ori_err_var:.2f}', c=obj_err_var, axis_name=['theta', 'phi', 'margin'])
 
     # surrogate function
     obj_aq = obj_err_mu + obj_err_var * 10
@@ -163,7 +163,7 @@ def main():
     plotter.plot_2d([data, data[[max_pos]]], f'section aquisition function, \n best_sec_phi={best_sec_phi}', axis_name=['phi', 'aq_value'])
 
     # next exploration part
-    explore_section_pos = np.append(best_ori, np.mean(best_sec_err_mu)*np.sin(best_sec_phi))
+    explore_section_pos.append(np.append(best_ori, np.mean(best_sec_err_mu)*np.sin(best_sec_phi)))
 
   # evaluate the shape
   # Question: use joint distribution v.s. use marginal distribution to evaluate model?

@@ -95,13 +95,35 @@ def get_hole_shape(points, orn:R):
   hull = ConvexHull(points_projected)
   return points_projected[hull.vertices]
 
-def get_section_points(points, section_pos, section_width = 0.5):
-  orn = R.from_euler('xyz', np.append(section_pos[:2],0))
-  disp = section_pos[2]
-  z_start = disp - section_width/2
-  z_end = disp + section_width/2
-  points_transformed = orn.apply(points)
-  return points_transformed[(points_transformed[:, 2] > z_start) & (points_transformed[:, 2] < z_end)]
+def get_section_points(points, section_poses, section_width = 0.5):
+  shape = points.copy()
+  shape[:,-1] = 1.5
+  shape[:,-1] += np.random.normal(0, 1.6, shape.shape[0])
+  shape_2 = points.copy()
+  shape_2[:,-1] = 1.5
+  shape_2[:,-1] += np.random.normal(0, 1.6, shape_2.shape[0])
+  shape_3 = points.copy()
+  shape_3[:,-1] = 1.5
+  shape_3[:,:-1] = np.random.normal(0, 0.5, (shape_3.shape[0], 2))
+  shape_3[:,-1] += np.random.normal(0, 0.8, shape_3.shape[0])
+  mask_in = np.zeros(points.shape[0], dtype=bool)
+  mask_out = np.ones(points.shape[0], dtype=bool)
+  for section_pos in section_poses:
+    orn = R.from_euler('xyz', np.append(section_pos[:2],0))
+    disp = section_pos[2]
+    z_start = disp - section_width/2
+    z_end = disp + section_width/2
+    points_transformed = orn.apply(points)
+    mask_in |= ((points_transformed[:, 2] > z_start) & (points_transformed[:, 2] < z_end))
+    mask_out &= ((points_transformed[:, 2] < (z_start-0.6)) | (points_transformed[:, 2] > (z_end+0.6)))
+  # return points[mask_in]
+  # return points
+  return np.concatenate([
+    points[mask_in], 
+    shape[mask_out],
+    shape_2[mask_out], 
+    # shape_3[mask_out], 
+  ],axis=0)
 
 '''probabilistic model'''
 # We will use the simplest form of GP model, exact inference
@@ -122,10 +144,9 @@ class GaussianProcess():
     # expand data to make the data periodic
     train_x_full = []
     train_y_full = []
-    for delta_theta in [-torch.pi*2, 0, torch.pi*2]:
-      for delta_phi in [-torch.pi, 0, torch.pi]:
-        train_x_full.append(train_x + torch.tensor([delta_theta, delta_phi]))
-        train_y_full.append(train_y)
+    for delta_theta in [-torch.pi, 0, torch.pi]:
+      train_x_full.append(train_x + torch.tensor([delta_theta, 0]))
+      train_y_full.append(train_y)
     train_x = torch.cat(train_x_full, dim=0)
     train_y = torch.cat(train_y_full, dim=0)
     self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
