@@ -69,7 +69,7 @@ def main():
 
   # num_plts = 3
   # fig = plt.figure(figsize=(5, 5*num_plts))
-  plotter = Plotter(num_figs=32)
+  plotter = Plotter(num_figs=48)
   # load the data
   points_normed = load_data('../test/assets/bottle.ply')
   plotter.plot_3d([points_normed], 'bottle point clouds')
