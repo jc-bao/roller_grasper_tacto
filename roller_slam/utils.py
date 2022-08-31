@@ -95,19 +95,16 @@ def get_hole_shape(points, orn:R):
   hull = ConvexHull(points_projected)
   return points_projected[hull.vertices]
 
-def get_section_points(points, section_poses, section_width = 0.5):
-  shape = points.copy()
-  shape[:,-1] = 1.5
-  shape[:,-1] += np.random.normal(0, 1.6, shape.shape[0])
-  shape_2 = points.copy()
-  shape_2[:,-1] = 1.5
-  shape_2[:,-1] += np.random.normal(0, 1.6, shape_2.shape[0])
-  shape_3 = points.copy()
-  shape_3[:,-1] = 1.5
-  shape_3[:,:-1] = np.random.normal(0, 0.5, (shape_3.shape[0], 2))
-  shape_3[:,-1] += np.random.normal(0, 0.8, shape_3.shape[0])
+def get_section_points(points, section_poses, section_width = 0.8):
+  # theta = np.arange(-np.pi, np.pi, np.pi/15)
+  # phi = np.arange(-np.pi/2, np.pi/2, np.pi/15)
+  # base_ori = np.stack(np.meshgrid(theta, phi), axis=-1).reshape(-1, 2)
+  # shape = np.ones((base_ori.shape[0], 3)) * 1.5
+  # shape[:, :2] = base_ori
+  # shape += np.random.normal(0, 0.4, shape.shape)
+  # shape = spherical_to_cartisian(shape)
   mask_in = np.zeros(points.shape[0], dtype=bool)
-  mask_out = np.ones(points.shape[0], dtype=bool)
+  # mask_out = np.ones(shape.shape[0], dtype=bool)
   for section_pos in section_poses:
     orn = R.from_euler('xyz', np.append(section_pos[:2],0))
     disp = section_pos[2]
@@ -115,14 +112,10 @@ def get_section_points(points, section_poses, section_width = 0.5):
     z_end = disp + section_width/2
     points_transformed = orn.apply(points)
     mask_in |= ((points_transformed[:, 2] > z_start) & (points_transformed[:, 2] < z_end))
-    mask_out &= ((points_transformed[:, 2] < (z_start-0.6)) | (points_transformed[:, 2] > (z_end+0.6)))
-  # return points[mask_in]
-  # return points
+    # mask_out &= ((shape[:, 2] < (z_start-1.0)) | (shape[:, 2] > (z_end+1.0)))
   return np.concatenate([
     points[mask_in], 
-    shape[mask_out],
-    shape_2[mask_out], 
-    # shape_3[mask_out], 
+    # shape[mask_out],
   ],axis=0)
 
 '''probabilistic model'''

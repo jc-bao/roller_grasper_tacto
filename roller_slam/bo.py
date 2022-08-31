@@ -1,3 +1,4 @@
+from turtle import width
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from scipy.interpolate import interp1d
@@ -91,16 +92,18 @@ def main():
   plotter.plot_2d([hole_shape], 'hole shape')
   plotter.plot_polar(hole_shape_polar, 'hole shape polar')
 
-  explore_section_pos = [np.array([0,0,0])] # explore the center section first
-  for explore_step in range(3):
+  explore_section_pos = [np.array([0,np.pi/2,0])] # explore the center section first
+  min_dist_mu = []
+  min_dist_var = []
+  for explore_step in range(5):
     # explore the object
-    section_points = get_section_points(points_normed, explore_section_pos)
+    section_points = get_section_points(points_normed, explore_section_pos, section_width=0.5)
     plotter.plot_3d([section_points], f'section points, orn={explore_section_pos}')
 
     # fit a probabilistic model to the section points
     section_point_spherical = cartisian_to_spherical(section_points)
     section_point_tensor = torch.tensor(section_point_spherical)
-    gp_shape = GaussianProcess(section_point_tensor[:,:2], section_point_tensor[:,2])
+    gp_shape = GaussianProcess(section_point_tensor[:,:2], section_point_tensor[:,2], train_num=100)
     x_pred, y_pred_mu, y_pred_var = gp_shape.predict(step=angle_step)
     pred_point_spherical = torch.cat((x_pred, y_pred_mu.unsqueeze(-1)), dim=-1).detach().numpy()
     pred_point = spherical_to_cartisian(pred_point_spherical)
@@ -142,6 +145,8 @@ def main():
     mll_ori = all_ori[mll_ori_idx]
     mll_ori_err_mu = obj_err_mu[mll_ori_idx]
     mll_ori_err_var = obj_err_var[mll_ori_idx]
+    min_dist_mu.append(mll_ori_err_mu)
+    min_dist_var.append(mll_ori_err_var)
     plotter.plot_3d([data], f'object errors, \n best_ori={mll_ori}, \n mu={mll_ori_err_mu:.2f}, \n var={mll_ori_err_var:.2f}', c=obj_err_var, axis_name=['theta', 'phi', 'margin'])
 
     # surrogate function
@@ -164,6 +169,8 @@ def main():
 
     # next exploration part
     explore_section_pos.append(np.append(best_ori, np.mean(best_sec_err_mu)*np.sin(best_sec_phi)))
+  data = np.stack((np.arange(len(min_dist_mu)), min_dist_mu), axis=-1)
+  plotter.plot_2d([data], title='error change over time', c=np.array(min_dist_var))
 
   # evaluate the shape
   # Question: use joint distribution v.s. use marginal distribution to evaluate model?
