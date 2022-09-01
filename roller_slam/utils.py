@@ -143,10 +143,8 @@ class ExactGPModel(gpytorch.models.ExactGP):
   def __init__(self, train_x, train_y, likelihood):
     super(ExactGPModel, self).__init__(train_x, train_y, likelihood)
     self.mean_module = gpytorch.means.ConstantMean()
-    self.covar_module = gpytorch.kernels.ScaleKernel(
-      gpytorch.kernels.RBFKernel()) + gpytorch.kernels.ScaleKernel(
-      gpytorch.kernels.RBFKernel()) + gpytorch.kernels.ScaleKernel(
-      gpytorch.kernels.RBFKernel())
+    self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+        # + gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
 
   def forward(self, x):
     mean_x = self.mean_module(x)
@@ -167,7 +165,7 @@ class GaussianProcess():
     self.model = ExactGPModel(train_x, train_y, self.likelihood)
     hypers = {
       'covar_module.kernels.0.base_kernel.lengthscale': torch.tensor(0.4),
-      'covar_module.kernels.1.base_kernel.lengthscale': torch.tensor(0.02),
+      # 'covar_module.kernels.1.base_kernel.lengthscale': torch.tensor(0.02),
     }
     self.model_params = self.model.initialize(**hypers)
 
