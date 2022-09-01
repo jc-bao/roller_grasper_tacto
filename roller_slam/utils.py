@@ -165,7 +165,7 @@ class GaussianProcess():
     self.model = ExactGPModel(train_x, train_y, self.likelihood)
     hypers = {
       'covar_module.kernels.0.base_kernel.lengthscale': torch.tensor(0.4),
-      # 'covar_module.kernels.1.base_kernel.lengthscale': torch.tensor(0.02),
+      'covar_module.kernels.1.base_kernel.lengthscale': torch.tensor(0.02),
     }
     self.model_params = self.model.initialize(**hypers)
 
