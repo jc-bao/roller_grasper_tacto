@@ -1,3 +1,5 @@
+from hmac import digest_size
+from tkinter import Scale
 import numpy as np
 import matplotlib.pyplot as plt
 import gpytorch
@@ -7,6 +9,69 @@ from scipy.spatial import ConvexHull
 from tqdm import trange
 import open3d as o3d
 from scipy.optimize import curve_fit
+
+def get_sphere_pcd(x_scale,y_scale,z_scale, density=21):
+  theta, phi = np.meshgrid(np.linspace(-np.pi,np.pi,density), np.linspace(-np.pi/2,np.pi/2,density))
+  x = np.cos(phi) * np.cos(theta) * x_scale
+  y = np.cos(phi) * np.sin(theta) * y_scale
+  z = np.sin(phi) * z_scale
+  return np.stack((x, y, z), axis=-1).reshape(-1, 3)
+
+def get_cylinder_pcd(x_scale, y_scale, z_scale, density=21):
+  theta, z = np.meshgrid(np.linspace(-np.pi, np.pi, density), np.linspace(-z_scale, z_scale, density))
+  x = np.cos(theta) * x_scale
+  y = np.sin(theta) * y_scale
+  side = np.stack([x, y, z], axis=-1).reshape(-1, 3)
+  xx, yy = np.meshgrid(np.linspace(-1, 1, density//3), np.linspace(-1, 1, density//3))
+  rr = np.sqrt(xx**2 + yy**2)
+  mask = rr<1
+  circle = np.stack([xx[mask], yy[mask], np.zeros(np.sum(mask))], axis=-1)
+  circle[:, 0] *= x_scale
+  circle[:, 1] *= y_scale
+  circle_up = circle.copy()
+  circle_down = circle.copy()
+  circle_up[:,-1] = z_scale
+  circle_down[:,-1] = -z_scale
+  return np.concatenate(
+    [side, circle_up, circle_down], axis=0
+  )
+
+def get_cone_pcd(x_scale, y_scale, z_scale, density=21):
+  theta, z = np.meshgrid(np.linspace(-np.pi, np.pi, density), np.linspace(-1, 1, density))
+  x = np.cos(theta) * (-z+1)/2
+  y = np.sin(theta) * (-z+1)/2
+  side = np.stack([x, y, z], axis=-1).reshape(-1, 3)
+  xx, yy = np.meshgrid(np.linspace(-1, 1, density//2), np.linspace(-1, 1, density//3))
+  rr = np.sqrt(xx**2 + yy**2)
+  mask = rr<1
+  circle = np.stack([xx[mask], yy[mask], -np.ones(np.sum(mask))], axis=-1)
+  pt = np.concatenate(
+    [side, circle], axis=0
+  )
+  pt[:,0] *= x_scale
+  pt[:,1] *= y_scale
+  pt[:,2] *= z_scale
+  return pt
+
+def get_cube_pcd(x_scale, y_scale, z_scale, density=11):
+  x, y, z = np.meshgrid(np.linspace(-1, 1, density), np.linspace(-1, 1, density), np.linspace(-1, 1, density))
+  pt = np.stack([x, y, z], axis=-1).reshape(-1, 3)
+  mask = np.abs(pt).max(axis=-1) == 1
+  pt = pt[mask]
+  pt[:, 0] *= x_scale
+  pt[:, 1] *= y_scale
+  pt[:, 2] *= z_scale
+  return pt
+
+def get_pyramid_pcd(x_scale, y_scale, z_scale, density=11):
+  x, y, z = np.meshgrid(np.linspace(-1, 1, density), np.linspace(-1, 1, density), np.linspace(-1, 1, density))
+  pt = np.stack([x, y, z], axis=-1).reshape(-1, 3)
+  mask = np.abs(pt).max(axis=-1) == 1
+  pt = pt[mask]
+  pt[:, 0] *= x_scale
+  pt[:, 1] *= y_scale
+  pt[:, 2] *= z_scale
+  return pt
 
 def cartisian_to_spherical(points):
   points_spherical = np.zeros(points.shape)
@@ -42,9 +107,8 @@ class Plotter():
         ax.plot(data[:,0], data[:,1])
         # ax.set_box_aspect(np.ptp(data[:,0])/np.ptp(data[:,1]))
       else:
-        cm = plt.cm.get_cmap('viridis')
-        sc = ax.scatter(data[:,0], data[:,1], s=10, cmap=cm, c=c)
-        plt.colorbar(sc)
+        ax.plot(data[:,0], data[:,1])
+        ax.fill_between(data[:,0], data[:,1]-c*1.95, data[:,1]+c*1.95, alpha=0.2)
     ax.set_xlabel(axis_name[0])
     ax.set_ylabel(axis_name[1])
     ax.set_title(title)
@@ -69,7 +133,7 @@ class Plotter():
       else:
         cm = plt.cm.get_cmap('viridis')
         sc = ax.scatter(data[:,0], data[:,1], data[:,2], s=10, cmap=cm, c=c)
-        plt.colorbar(sc)
+        self.cb = plt.colorbar(sc)
     ax.set_xlabel(axis_name[0])
     ax.set_ylabel(axis_name[1])
     ax.set_zlabel(axis_name[2])
@@ -143,8 +207,8 @@ class ExactGPModel(gpytorch.models.ExactGP):
   def __init__(self, train_x, train_y, likelihood):
     super(ExactGPModel, self).__init__(train_x, train_y, likelihood)
     self.mean_module = gpytorch.means.ConstantMean()
-    self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel()) \
-        + gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+    self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+        # + gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
 
   def forward(self, x):
     mean_x = self.mean_module(x)
@@ -164,8 +228,8 @@ class GaussianProcess():
     self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
     self.model = ExactGPModel(train_x, train_y, self.likelihood)
     hypers = {
-      'covar_module.kernels.0.base_kernel.lengthscale': torch.tensor(0.7),
-      'covar_module.kernels.1.base_kernel.lengthscale': torch.tensor(0.07),
+      'covar_module.base_kernel.lengthscale': torch.tensor(1.5), # 1.5 for sphere
+      # 'covar_module.kernels.1.base_kernel.lengthscale': torch.tensor(0.5),
     }
     self.model_params = self.model.initialize(**hypers)
 
@@ -180,7 +244,8 @@ class GaussianProcess():
       output = self.model(train_x)
       loss = -mll(output, train_y)
       loss.backward()
-      pbar.set_description(f'Iter {i+1}/{train_num} - Loss: {loss.item():.3f}, lengthscale0: {self.model.covar_module.kernels[0].base_kernel.lengthscale.item():.3f}, lengthscale1: {self.model.covar_module.kernels[1].base_kernel.lengthscale.item():.3f}')
+      pbar.set_description(f'Iter {i+1}/{train_num} - Loss: {loss.item():.3f}, lengthscale0: {self.model.covar_module.base_kernel.lengthscale.item():.3f}')
+        # lengthscale1: {self.model.covar_module.kernels[1].base_kernel.lengthscale.item():.3f}')
       optimizer.step()
 
   def predict(self, step = np.pi/60):
@@ -195,3 +260,9 @@ class GaussianProcess():
       observed_pred = self.likelihood(self.model(x_pred))
 
     return x_pred, observed_pred.mean, observed_pred.variance
+
+if __name__ == '__main__':
+  plotter = Plotter(num_figs=1)
+  points = get_cube_pcd(0.15, 0.1, 0.05)
+  plotter.plot_3d([points], axis_name=['x', 'y', 'z'], title='cylinder')
+  plt.show()
