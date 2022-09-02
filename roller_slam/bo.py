@@ -65,7 +65,7 @@ def main():
   # object SLAM parameters
   n_phi = 10
   n_theta = n_phi * 2
-  section_width = 0.05
+  section_width = 0.02
   angle_step = torch.pi/n_phi
 
   # num_plts = 3
