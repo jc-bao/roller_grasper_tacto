@@ -72,7 +72,7 @@ def main():
   # fig = plt.figure(figsize=(5, 5*num_plts))
   plotter = Plotter(num_figs=64)
   # load the data
-  points = get_cylinder_pcd(0.05,0.1,0.15)
+  points = get_sphere_pcd(0.05,0.1,0.15)
   # points = load_data('../test/assets/bottle.ply')
   # xxyy = np.stack(np.meshgrid(np.linspace(-0.05, 0.05, 8), np.linspace(-0.05, 0.05, 8)), axis=-1)
   # ttrr = cartisian_to_polar(xxyy)
@@ -124,7 +124,6 @@ def main():
     section_points = get_section_points(points, explore_section_pos, section_width)
     new_points = get_section_points(points, [explore_section_pos[-1]], section_width)
     plotter.plot_3d([new_points, section_points], f'section points, orn={explore_section_pos}', true_aspect=True)
-
 
     # fit a probabilistic model to the section points
     normed_section_points = (section_points - points_mean) / points_std
@@ -186,7 +185,7 @@ def main():
     plotter.plot_3d([data.reshape(-1,3)], f'object errors, \n best_ori={mll_ori}, \n mu={mll_ori_err_mu:.2f}, \n var={mll_ori_err_var:.2f}', c=obj_err_var.flatten(), axis_name=['theta', 'phi', 'margin'])
 
     # surrogate function
-    obj_aq = obj_err_mu + obj_err_var * 20
+    obj_aq = obj_err_mu *0 + obj_err_var * 20
     max_pos = np.unravel_index(np.argmax(obj_aq), obj_aq.shape)
     best_ori = all_ori[max_pos]
     data = np.concatenate([all_ori, np.expand_dims(obj_aq, axis=-1)], axis=-1)
@@ -202,15 +201,15 @@ def main():
     best_sec_range = best_sec_start[best_sec_mask] + section_width/2
     data = np.stack([best_sec_range, -best_sec_err_mu], axis=1)
     plotter.plot_2d([data], f'-section errors', c=best_sec_err_var, axis_name=['section displacement', 'margin'])
-    sec_aq = -best_sec_err_mu + best_sec_err_var * 50
+    sec_aq = -best_sec_err_mu*0 + best_sec_err_var * 50
     max_pos = np.argmax(sec_aq)
     best_sec_disp = best_sec_range[max_pos]
     data = np.stack([best_sec_range, sec_aq], axis=1)
     plotter.plot_2d([data, data[[max_pos]]], f'section aquisition function, \n best_sec_phi={best_sec_disp}', axis_name=['phi', 'aq_value'])
 
     # next exploration part
-    # explore_section_pos.append(np.append(best_ori, best_sec_disp))
-    explore_section_pos.append(np.array([np.random.uniform(-np.pi, np.pi), np.random.uniform(-np.pi/2, np.pi/2), np.random.uniform(-0.05, 0.05)]))
+    explore_section_pos.append(np.append(best_ori, best_sec_disp))
+    # explore_section_pos.append(np.array([np.random.uniform(-np.pi, np.pi), np.random.uniform(-np.pi/2, np.pi/2), np.random.uniform(-0.05, 0.05)]))
 
     if len(min_dist_mu) > 2:
       if np.abs(min_dist_mu[-2] - min_dist_mu[-1]) < 0.0005:
