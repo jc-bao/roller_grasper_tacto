@@ -72,7 +72,8 @@ def main():
   # fig = plt.figure(figsize=(5, 5*num_plts))
   plotter = Plotter(num_figs=64)
   # load the data
-  points = get_sphere_pcd(0.05,0.1,0.15)
+  # TODO change object shape here
+  points = get_sphere_pcd(0.05,0.1,0.15) # np.darray(n, 3)
   # points = load_data('../test/assets/bottle.ply')
   # xxyy = np.stack(np.meshgrid(np.linspace(-0.05, 0.05, 8), np.linspace(-0.05, 0.05, 8)), axis=-1)
   # ttrr = cartisian_to_polar(xxyy)
