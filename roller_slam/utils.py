@@ -261,6 +261,52 @@ class GaussianProcess():
 
     return x_pred, observed_pred.mean, observed_pred.variance
 
+class GPIS():
+  def __init__(self, train_x, train_y, train_num = 100):
+    # expand data to make the data periodic
+    train_x_full = []
+    train_y_full = []
+    for delta_theta in [-torch.pi, 0, torch.pi]:
+      train_x_full.append(train_x + torch.tensor([delta_theta, 0]))
+      train_y_full.append(train_y)
+    train_x = torch.cat(train_x_full, dim=0)
+    train_y = torch.cat(train_y_full, dim=0)
+    self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
+    self.model = ExactGPModel(train_x, train_y, self.likelihood)
+    hypers = {
+      'covar_module.base_kernel.lengthscale': torch.tensor(1.5), # 1.5 for sphere
+      # 'covar_module.kernels.1.base_kernel.lengthscale': torch.tensor(0.5),
+    }
+    self.model_params = self.model.initialize(**hypers)
+
+    self.model.train()
+    self.likelihood.train()
+    optimizer = torch.optim.Adam(self.model.parameters(), lr=0.01)
+    mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.model)
+    for i in (pbar := trange(train_num)):
+      # Zero gradients from previous iteration
+      optimizer.zero_grad()
+      # Output from model
+      output = self.model(train_x)
+      loss = -mll(output, train_y)
+      loss.backward()
+      pbar.set_description(f'Iter {i+1}/{train_num} - Loss: {loss.item():.3f}, lengthscale0: {self.model.covar_module.base_kernel.lengthscale.item():.3f}')
+        # lengthscale1: {self.model.covar_module.kernels[1].base_kernel.lengthscale.item():.3f}')
+      optimizer.step()
+
+  def predict(self, step = np.pi/60):
+    self.model.eval()
+    self.likelihood.eval()
+
+    # Make predictions by feeding model through likelihood
+    with torch.no_grad(), gpytorch.settings.fast_pred_var():
+      theta = torch.arange(-np.pi, np.pi, step, dtype=torch.float64)
+      phi = torch.arange(-np.pi/2, np.pi/2, step, dtype=torch.float64)
+      x_pred = torch.stack(torch.meshgrid(theta, phi), dim=-1).view(-1, 2)
+      observed_pred = self.likelihood(self.model(x_pred))
+
+    return x_pred, observed_pred.mean, observed_pred.variance
+
 if __name__ == '__main__':
   plotter = Plotter(num_figs=1)
   points = get_cube_pcd(0.15, 0.1, 0.05)
