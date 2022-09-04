@@ -261,27 +261,95 @@ class GaussianProcess():
 
     return x_pred, observed_pred.mean, observed_pred.variance
 
+class thinPlateModel(gpytorch.models.ExactGP):
+  def __init__(self, train_x, train_y, likelihood):
+    super(thinPlateModel, self).__init__(train_x, train_y, likelihood)
+    # self.mean_module = gpytorch.means.ZeroMean() 
+    #self.covar_module = gpytorch.kernels.ScaleKernel(ThinPlateRegularizer(), outputscale_constraint=gpytorch.constraints.Interval(1e-5,1e-3))
+    # self.covar_module = ThinPlateRegularizer()
+    self.mean_module = gpytorch.means.ConstantMean()
+    # self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+    # self.covar_module = gpytorch.kernels.ScaleKernel(ThinPlateRegularizer())
+    self.covar_module = ThinPlateRegularizer()
+
+
+  def forward(self, x):
+    mean_x = self.mean_module(x)
+    covar_x = self.covar_module(x)
+    return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+
+
+class ThinPlateRegularizer(gpytorch.kernels.Kernel):
+  # the sinc kernel is stationary
+  is_stationary = True
+
+  # We will register the parameter when initializing the kernel
+  def __init__(self, dist_prior=None, dist_constraint=None, **kwargs):
+    super().__init__(**kwargs)
+
+    # register the raw parameter
+    self.register_parameter(
+      name='max_dist', parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, 1))
+    )
+
+    # set the parameter constraint to be positive
+    if dist_constraint is None:
+      dist_constraint = gpytorch.constraints.GreaterThan(0.20)
+
+    # register the constraint
+    self.register_constraint("max_dist", dist_constraint)
+
+    # set the parameter prior, see
+    # https://docs.gpytorch.ai/en/latest/module.html#gpytorch.Module.register_prior
+    if dist_prior is not None:
+      self.register_prior(
+        "dist_prior",
+        dist_prior,
+        lambda m: m.length,
+        lambda m, v: m._set_length(v),
+      )
+
+  # now set up the 'actual' paramter
+  @property
+  def maxdist(self):
+    # when accessing the parameter, apply the constraint transform
+    return self.raw_dist_constraint.transform(self.max_dist)
+
+  @maxdist.setter
+  def maxdist(self, value):
+    return self._set_maxdist(value)
+
+  def _set_maxdist(self, value):
+    if not torch.is_tensor(value):
+      value = torch.as_tensor(value).to(self.max_dist)
+    # when setting the paramater, transform the actual value to a raw one by applying the inverse transform
+    self.initialize(max_dist=self.raw_dist_constraint.inverse_transform(value))
+
+  # this is the kernel function
+  def forward(self, x1, x2, diag=False, **params):
+    # calculate the distance between inputs
+    diff = self.covar_dist(x1, x2, diag=diag, **params)
+    # prevent divide by 0 errors
+    diff.where(diff == 0, torch.as_tensor(1e-20))
+    # noise = 1e-5
+    # white = noise*torch.eye(diff.shape[0], diff.shape[1])
+    tp = 2*torch.pow(diff, 3)-3*self.max_dist * \
+      torch.pow(diff, 2)+self.max_dist**3
+    return tp
+
 class GPIS():
   def __init__(self, train_x, train_y, train_num = 100):
-    # expand data to make the data periodic
-    train_x_full = []
-    train_y_full = []
-    for delta_theta in [-torch.pi, 0, torch.pi]:
-      train_x_full.append(train_x + torch.tensor([delta_theta, 0]))
-      train_y_full.append(train_y)
-    train_x = torch.cat(train_x_full, dim=0)
-    train_y = torch.cat(train_y_full, dim=0)
     self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
-    self.model = ExactGPModel(train_x, train_y, self.likelihood)
+    self.model = thinPlateModel(train_x, train_y, self.likelihood)
     hypers = {
-      'covar_module.base_kernel.lengthscale': torch.tensor(1.5), # 1.5 for sphere
-      # 'covar_module.kernels.1.base_kernel.lengthscale': torch.tensor(0.5),
+      'likelihood.noise_covar.noise': 0.03,
+      'covar_module.max_dist': torch.tensor(1.0),
     }
     self.model_params = self.model.initialize(**hypers)
 
     self.model.train()
     self.likelihood.train()
-    optimizer = torch.optim.Adam(self.model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(self.model.parameters(), lr=0.02)
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.model)
     for i in (pbar := trange(train_num)):
       # Zero gradients from previous iteration
@@ -299,13 +367,28 @@ class GPIS():
     self.likelihood.eval()
 
     # Make predictions by feeding model through likelihood
-    with torch.no_grad(), gpytorch.settings.fast_pred_var():
-      theta = torch.arange(-np.pi, np.pi, step, dtype=torch.float64)
-      phi = torch.arange(-np.pi/2, np.pi/2, step, dtype=torch.float64)
-      x_pred = torch.stack(torch.meshgrid(theta, phi), dim=-1).view(-1, 2)
-      observed_pred = self.likelihood(self.model(x_pred))
+    theta = torch.arange(-np.pi, np.pi, step)
+    phi = torch.arange(-np.pi/2, np.pi/2, step)
+    r = torch.arange(-2, 2, 0.01)
+    theta, phi, r = torch.meshgrid((theta, phi, r))
 
-    return x_pred, observed_pred.mean, observed_pred.variance
+    xyz = torch.stack((r*torch.cos(phi)*torch.cos(theta), r*torch.cos(phi)*torch.sin(theta), r*torch.sin(phi)), dim=-1)
+
+    with torch.no_grad(), gpytorch.settings.fast_pred_var():
+      observed_pred = self.likelihood(self.model(xyz))
+
+    is_mean = observed_pred.mean
+    is_var = observed_pred.variance
+
+    is_min = torch.min(torch.abs(is_mean), dim=-1)[0]
+    mask = (torch.abs(is_mean) == is_min.unsqueeze(-1))
+    
+    x_pred = torch.stack((theta[mask], phi[mask]), dim=-1)
+    y_pred_mean = r[mask]
+    y_pred_var = is_var[mask]
+
+    return x_pred, y_pred_mean, y_pred_var
+
 
 if __name__ == '__main__':
   plotter = Plotter(num_figs=1)

@@ -1,10 +1,11 @@
+import enum
 from turtle import width
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from scipy.interpolate import interp1d
 import torch, gpytorch
 
-from roller_slam.utils import load_data, get_hole_shape, get_section_points, GaussianProcess, Plotter, cartisian_to_spherical, spherical_to_cartisian, cartisian_to_polar, get_sphere_pcd, get_cylinder_pcd, get_cone_pcd, get_cube_pcd
+from roller_slam.utils import load_data, get_hole_shape, get_section_points, GPIS, Plotter, cartisian_to_spherical, spherical_to_cartisian, cartisian_to_polar, get_sphere_pcd, get_cylinder_pcd, get_cone_pcd, get_cube_pcd
 
 def get_projection_shape(gp_shape, orn):
   """Project a 3d Guassian Distribution to a 2d Guassian Distribution
@@ -84,7 +85,7 @@ def main():
   points_mean = np.mean(points, axis=0)
   points_std = np.std(points, axis=0)
   points_mean = 0
-  points_std = 0.08
+  points_std = 0.1
   points_normed = (points - points_mean) / points_std
   plotter.plot_3d([points], 'normed bottle point clouds', true_aspect=True)
 
@@ -128,21 +129,43 @@ def main():
 
     # fit a probabilistic model to the section points
     normed_section_points = (section_points - points_mean) / points_std
-    normed_section_point_spherical = cartisian_to_spherical(normed_section_points)
-    normed_section_point_tensor = torch.tensor(normed_section_point_spherical)
-    gp_shape = GaussianProcess(normed_section_point_tensor[:,:2], normed_section_point_tensor[:,2], train_num=100)
+    normed_section_point_tensor = torch.tensor(normed_section_points, dtype=torch.float64)
+    theta = torch.linspace(-np.pi, np.pi, 60, dtype=torch.float64)
+    phi = torch.linspace(-np.pi/2, np.pi/2, 30, dtype=torch.float64)
+    theta_grid, phi_grid = torch.meshgrid(theta, phi)
+    out_point = torch.stack([torch.cos(phi_grid) * torch.cos(theta_grid), torch.cos(phi_grid) * torch.sin(theta_grid), torch.sin(phi_grid)], dim=-1)
+    out_point = out_point.reshape(-1, 3)
+    out_point_value = torch.ones(out_point.shape[0], dtype=torch.float64)
+    in_point = torch.ones((1,3))
+    in_point_value = -torch.ones(1, dtype=torch.float64)
+    data = torch.cat([out_point, in_point, normed_section_point_tensor], dim=0)
+    value = torch.cat([out_point_value, in_point_value, torch.zeros(normed_section_point_tensor.shape[0], dtype=torch.float64)], dim=0)
+    gp_shape = GPIS(data, value, train_num=100)
     x_pred, y_pred_mu, y_pred_var = gp_shape.predict(step=angle_step)
     normed_pred_point_spherical = torch.cat((x_pred, y_pred_mu.unsqueeze(-1)), dim=-1).detach().numpy()
     normed_pred_point = spherical_to_cartisian(normed_pred_point_spherical)
     normed_pred_var = y_pred_var.detach().numpy()
     pred_point = normed_pred_point * points_std + points_mean
     pred_point_spherical = cartisian_to_spherical(pred_point).reshape(n_theta, n_phi, 3)
-    pred_point_orn = R.from_euler('zy', pred_point_spherical[:,:,:2].reshape(-1,2))
-    pred_var = normed_pred_var.reshape(n_theta, n_phi)
-    # pred_point_rot_vec = pred_point_orn.apply(np.array([0,0,1])).reshape(n_theta, n_phi, 3)
-    # pred_point_std = np.dot(pred_point_rot_vec, points_std)
-    pred_var = pred_var * (points_std**2)
+    pred_var = normed_pred_var * (points_std**2)
     plotter.plot_3d([pred_point.reshape(-1,3)], 'gp shape', c=pred_var.flatten(), true_aspect=True)
+
+    # gridify the result to angle
+    # angle_step = torch.pi/36
+    # x_pred_sph = cartisian_to_spherical(x_pred)
+    # x_pred_angle = x_pred_sph[:,:2]
+    # x_pred_angle_grid = torch.floor(x_pred_angle/angle_step)*angle_step
+    # normed_pred_point_spherical = torch.zeros((72, 36, 3))
+    # normed_pred_var = torch.zeros((72, 36))
+    # for i, theta in enumerate(torch.arange(-np.pi, np.pi, angle_step)):
+    #   for j, phi in enumerate(torch.arange(-np.pi/2, np.pi/2, angle_step)):
+    #     normed_pred_point_spherical[i, j, 0] = theta
+    #     normed_pred_point_spherical[i, j, 1] = phi
+    #     mask = (x_pred_angle_grid[:,0]==theta & x_pred_angle_grid[:,1]==phi)
+    #     value = y_pred_mu[mask]
+    #     idx = torch.argmin(torch.abs(value))
+    #     normed_pred_point_spherical[i, j, 2] = x_pred_sph[mask][idx,2]
+    #     normed_pred_var[i, j] = y_pred_var[mask][idx]
 
     # evaluate the shape
     # enumerate all possible orientations
