@@ -71,10 +71,10 @@ def main():
 
   # num_plts = 3
   # fig = plt.figure(figsize=(5, 5*num_plts))
-  plotter = Plotter(num_figs=64)
+  plotter = Plotter(num_figs=32)
   # load the data
   # TODO change object shape here
-  points = get_sphere_pcd(0.05,0.1,0.15) # np.darray(n, 3)
+  points = get_cube_pcd(0.06,0.08,0.1, density=21) # np.darray(n, 3)
   # points = load_data('../test/assets/bottle.ply')
   # xxyy = np.stack(np.meshgrid(np.linspace(-0.05, 0.05, 8), np.linspace(-0.05, 0.05, 8)), axis=-1)
   # ttrr = cartisian_to_polar(xxyy)
@@ -121,7 +121,7 @@ def main():
   explore_section_pos = [np.array([np.pi/3,np.pi/3,0.01])] # explore the center section first
   min_dist_mu = []
   min_dist_var = []
-  for explore_step in range(5):
+  for explore_step in range(3):
     # explore the object
     section_points = get_section_points(points, explore_section_pos, section_width)
     new_points = get_section_points(points, [explore_section_pos[-1]], section_width)
@@ -130,17 +130,17 @@ def main():
     # fit a probabilistic model to the section points
     normed_section_points = (section_points - points_mean) / points_std
     normed_section_point_tensor = torch.tensor(normed_section_points, dtype=torch.float64)
-    theta = torch.linspace(-np.pi, np.pi, 60, dtype=torch.float64)
-    phi = torch.linspace(-np.pi/2, np.pi/2, 30, dtype=torch.float64)
+    theta = torch.linspace(-np.pi, np.pi, 20, dtype=torch.float64)
+    phi = torch.linspace(-np.pi/2, np.pi/2, 10, dtype=torch.float64)
     theta_grid, phi_grid = torch.meshgrid(theta, phi)
-    out_point = torch.stack([torch.cos(phi_grid) * torch.cos(theta_grid), torch.cos(phi_grid) * torch.sin(theta_grid), torch.sin(phi_grid)], dim=-1)
+    out_point = 2.0 * torch.stack([torch.cos(phi_grid) * torch.cos(theta_grid), torch.cos(phi_grid) * torch.sin(theta_grid), torch.sin(phi_grid)], dim=-1)
     out_point = out_point.reshape(-1, 3)
     out_point_value = torch.ones(out_point.shape[0], dtype=torch.float64)
-    in_point = torch.ones((1,3))
+    in_point = torch.zeros((1,3))
     in_point_value = -torch.ones(1, dtype=torch.float64)
-    data = torch.cat([out_point, in_point, normed_section_point_tensor], dim=0)
-    value = torch.cat([out_point_value, in_point_value, torch.zeros(normed_section_point_tensor.shape[0], dtype=torch.float64)], dim=0)
-    gp_shape = GPIS(data, value, train_num=100)
+    data = torch.cat([out_point, in_point, normed_section_point_tensor], dim=0).float()
+    value = torch.cat([out_point_value, in_point_value, torch.zeros(normed_section_point_tensor.shape[0], dtype=torch.float64)], dim=0).float()
+    gp_shape = GPIS(data, value, train_num=10)
     x_pred, y_pred_mu, y_pred_var = gp_shape.predict(step=angle_step)
     normed_pred_point_spherical = torch.cat((x_pred, y_pred_mu.unsqueeze(-1)), dim=-1).detach().numpy()
     normed_pred_point = spherical_to_cartisian(normed_pred_point_spherical)
@@ -148,6 +148,7 @@ def main():
     pred_point = normed_pred_point * points_std + points_mean
     pred_point_spherical = cartisian_to_spherical(pred_point).reshape(n_theta, n_phi, 3)
     pred_var = normed_pred_var * (points_std**2)
+    pred_var = pred_var.reshape(n_theta, n_phi)
     plotter.plot_3d([pred_point.reshape(-1,3)], 'gp shape', c=pred_var.flatten(), true_aspect=True)
 
     # gridify the result to angle
@@ -209,7 +210,7 @@ def main():
     plotter.plot_3d([data.reshape(-1,3)], f'object errors, \n best_ori={mll_ori}, \n mu={mll_ori_err_mu:.2f}, \n var={mll_ori_err_var:.2f}', c=obj_err_var.flatten(), axis_name=['theta', 'phi', 'margin'])
 
     # surrogate function
-    obj_aq = obj_err_mu *0 + obj_err_var * 20
+    obj_aq = obj_err_mu *1.0 + obj_err_var * 20
     max_pos = np.unravel_index(np.argmax(obj_aq), obj_aq.shape)
     best_ori = all_ori[max_pos]
     data = np.concatenate([all_ori, np.expand_dims(obj_aq, axis=-1)], axis=-1)

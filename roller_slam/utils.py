@@ -220,7 +220,7 @@ class GaussianProcess():
     # expand data to make the data periodic
     train_x_full = []
     train_y_full = []
-    for delta_theta in [-torch.pi, 0, torch.pi]:
+    for delta_theta in [-torch.pi*2, 0, torch.pi*2]:
       train_x_full.append(train_x + torch.tensor([delta_theta, 0]))
       train_y_full.append(train_y)
     train_x = torch.cat(train_x_full, dim=0)
@@ -342,8 +342,8 @@ class GPIS():
     self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
     self.model = thinPlateModel(train_x, train_y, self.likelihood)
     hypers = {
-      'likelihood.noise_covar.noise': 0.03,
-      'covar_module.max_dist': torch.tensor(1.0),
+      'likelihood.noise_covar.noise': 0.1,
+      'covar_module.max_dist': torch.tensor(5.0),
     }
     self.model_params = self.model.initialize(**hypers)
 
@@ -358,7 +358,7 @@ class GPIS():
       output = self.model(train_x)
       loss = -mll(output, train_y)
       loss.backward()
-      pbar.set_description(f'Iter {i+1}/{train_num} - Loss: {loss.item():.3f}, lengthscale0: {self.model.covar_module.base_kernel.lengthscale.item():.3f}')
+      pbar.set_description(f'Iter {i+1}/{train_num} - Loss: {loss.item():.3f}, lengthscale0: {self.model.covar_module.max_dist.item():.3f}, noise: {self.likelihood.noise_covar.noise.item():.3f}')
         # lengthscale1: {self.model.covar_module.kernels[1].base_kernel.lengthscale.item():.3f}')
       optimizer.step()
 
@@ -369,7 +369,7 @@ class GPIS():
     # Make predictions by feeding model through likelihood
     theta = torch.arange(-np.pi, np.pi, step)
     phi = torch.arange(-np.pi/2, np.pi/2, step)
-    r = torch.arange(-2, 2, 0.01)
+    r = torch.arange(0.1, 2, 0.01)
     theta, phi, r = torch.meshgrid((theta, phi, r))
 
     xyz = torch.stack((r*torch.cos(phi)*torch.cos(theta), r*torch.cos(phi)*torch.sin(theta), r*torch.sin(phi)), dim=-1)
