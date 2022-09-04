@@ -1,7 +1,6 @@
-from hmac import digest_size
-from tkinter import Scale
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FormatStrFormatter
 import gpytorch
 import torch
 from scipy.spatial.transform import Rotation as R
@@ -9,6 +8,7 @@ from scipy.spatial import ConvexHull
 from tqdm import trange
 import open3d as o3d
 from scipy.optimize import curve_fit
+import seaborn as sns
 
 def get_sphere_pcd(x_scale,y_scale,z_scale, density=21):
   theta, phi = np.meshgrid(np.linspace(-np.pi,np.pi,density), np.linspace(-np.pi/2,np.pi/2,density))
@@ -93,6 +93,12 @@ def cartisian_to_polar(points):
   points_polar[..., 1] = np.linalg.norm(points[..., :2], axis=-1)
   return points_polar
 
+def polar_to_cartisian(points_polar):
+  points = np.zeros(points_polar.shape)
+  points[..., 0] = points_polar[..., 1] * np.cos(points_polar[..., 0])
+  points[..., 1] = points_polar[..., 1] * np.sin(points_polar[..., 0])
+  return points
+
 class Plotter():
   def __init__(self, num_figs) -> None:
     self.num_figs = num_figs
@@ -112,6 +118,21 @@ class Plotter():
     ax.set_xlabel(axis_name[0])
     ax.set_ylabel(axis_name[1])
     ax.set_title(title)
+
+  def plot_heat(self, data, title, axis_name = ['x', 'y']):
+    ax = self.fig.add_subplot(self.num_figs,1,self.current_fig_id)
+    self.current_fig_id += 1
+    data = np.swapaxes(data, 0, 1)
+    xlabels = ['{:,.2f}'.format(x) for x in data[0,:,0]]
+    ylabels = ['{:,.2f}'.format(y) for y in data[:,0,1]]
+    g = sns.heatmap(data[...,2], xticklabels=xlabels, yticklabels=ylabels, square=True, ax=ax, annot=False, fmt=".2f", cmap="YlGnBu")
+    ax.set_xlabel(axis_name[0])
+    ax.set_ylabel(axis_name[1])
+    ax.set_title(title)
+    g.set_xticklabels(xlabels)
+    g.set_yticklabels(ylabels)
+    # ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+    # ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
   def plot_polar(self, data, title, c = None):
     ax = self.fig.add_subplot(self.num_figs,1,self.current_fig_id, projection='polar')
@@ -187,8 +208,19 @@ def get_hole_shape(points, orn:R):
   points_transformed = orn.apply(points)
   points_projected = points_transformed[:, :2]
   # get convex hull
-  hull = ConvexHull(points_projected)
-  return points_projected[hull.vertices]
+  # hull = ConvexHull(points_projected)
+  angle_step = np.pi/24
+  angle = np.arange(-np.pi, np.pi, angle_step)
+  points_polar = cartisian_to_polar(points_projected)
+  points_angle_grid = (points_polar[:,0]//angle_step)*angle_step
+  filtered_points_polar = []
+  for a in angle:
+    mask = np.abs(points_angle_grid - a)<1e-3
+    if mask.any():
+      filtered_points_polar.append(np.array([a, points_polar[mask,1].max()]))
+  filtered_points_polar = np.array(filtered_points_polar)
+  filtered_points_cartesian = polar_to_cartisian(filtered_points_polar)
+  return filtered_points_cartesian, filtered_points_polar
 
 def get_section_points(points, section_poses, section_width = 0.05):
   mask_in = np.zeros(points.shape[0], dtype=bool)
@@ -228,7 +260,7 @@ class GaussianProcess():
     self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
     self.model = ExactGPModel(train_x, train_y, self.likelihood)
     hypers = {
-      'covar_module.base_kernel.lengthscale': torch.tensor(1.5), # 1.5 for sphere
+      'covar_module.base_kernel.lengthscale': torch.tensor(0.2), # 1.5 for sphere
       # 'covar_module.kernels.1.base_kernel.lengthscale': torch.tensor(0.5),
     }
     self.model_params = self.model.initialize(**hypers)
