@@ -223,7 +223,7 @@ def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 5
     best_sec_err_mu = sec_err_mu[max_pos]
     best_sec_err_var = sec_err_var[max_pos]
     best_sec_start = sec_starts[max_pos]
-    best_sec_mask = best_sec_err_var > 1e-5
+    best_sec_mask = best_sec_err_var > 0
     best_sec_err_mu = best_sec_err_mu[best_sec_mask]
     best_sec_err_var = best_sec_err_var[best_sec_mask]
     best_sec_range = best_sec_start[best_sec_mask] + section_width/2
