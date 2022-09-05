@@ -58,19 +58,19 @@ def eval_section(y_mu, y_var, hole_shape_polar):
   var = torch.sum(pdf * ((x_min[:-1,0] - mean)**2))
   return mean, var
 
-def main():
+def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), explore_policy = 'bo', UCB_alpha = 500):
   # object SLAM parameters
   n_phi = 20
   n_theta = n_phi * 2
-  section_width = 0.03
+  section_width = 0.025
   angle_step = torch.pi/n_phi
-  max_explore_time = 10
+  max_explore_time = 5
   hole_angle = np.array([0, 0])
   points_mean = 0
   points_std = 0.08
-  init_explore_section = np.array([np.pi, np.pi/3, 0]) # swap[2pi, pi, -0.06,-0.03,0.03,0.06]
-  explore_policy = ['random', 'bo'][1] # swap 
-  UCB_alpha = 100 # swap range [0, 100, 10000] 
+  # init_explore_section = np.array([np.pi, np.pi/3, 0]) # swap[2pi, pi, -0.06,-0.03,0.03,0.06]
+  # explore_policy = ['random', 'bo'][1] # swap 
+  # UCB_alpha = 100 # swap range [0, 100, 10000] 
   object_name = 'Shape1'
   stop_bar = -0.03
 
@@ -145,7 +145,11 @@ def main():
     normed_section_points = (section_points - points_mean) / points_std
     normed_section_point_spherical = cartisian_to_spherical(normed_section_points)
     normed_section_point_tensor = torch.tensor(normed_section_point_spherical)
-    gp_shape = GaussianProcess(normed_section_point_tensor[:,:2], normed_section_point_tensor[:,2], train_num=100)
+    try:
+      gp_shape = GaussianProcess(normed_section_point_tensor[:,:2], normed_section_point_tensor[:,2], train_num=100)
+    except:
+      print('gaussian model encounter an error')
+      return -1, -1
     x_pred, y_pred_mu, y_pred_var = gp_shape.predict(step=angle_step)
     normed_pred_point_spherical = torch.cat((x_pred, y_pred_mu.unsqueeze(-1)), dim=-1).detach().numpy()
     normed_pred_point = spherical_to_cartisian(normed_pred_point_spherical)
@@ -257,9 +261,12 @@ def main():
   rot = R.from_euler('zy', -best_ori)
   insert_points=  rot.apply(points_dense)
   hole_3d = np.concatenate([hole_shape, np.zeros((hole_shape.shape[0],1))],axis=-1)
-  plotter.plot_3d([hole_3d, insert_points], title=f'final inseration orientation={best_ori}, \n err={true_object_err[max_pos]}', true_aspect=True, alpha=[1,0.05])
+  final_err = true_object_err[max_pos]
+  plotter.plot_3d([hole_3d, insert_points], title=f'final inseration orientation={best_ori}, \n err={final_err}', true_aspect=True, alpha=[1,0.05])
 
-  plotter.save(f'../test/results/{object_name}_{explore_policy}_{UCB_alpha}.png')
+  plotter.save(f'../test/results/{object_name}_{explore_policy}_{UCB_alpha}_err{final_err:.2f}_step{explore_step+1}_init{init_explore_section[0]:.2f}-{init_explore_section[1]:.2f}-{init_explore_section[2]:.2f}.png')
+
+  return final_err, explore_step+1 
 
 if __name__ == '__main__':
-  main()
+  run_bo()
