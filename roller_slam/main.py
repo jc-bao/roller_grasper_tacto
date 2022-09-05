@@ -2,20 +2,20 @@ from roller_slam.bo import run_bo
 import ray
 import numpy as np
 import pandas as pd
-import tqdm
 from functools import partialmethod
+import dcargs
 
 @ray.remote
-def main(x):
+def run_exp(x, object_name):
   init_explore_section = x[:3]
   UCB_alpha = x[3]
-  results = run_bo(init_explore_section, UCB_alpha, object_name="Shape1")
+  results = run_bo(init_explore_section, UCB_alpha, object_name=object_name)
   print('====finished====')
   return results
   
 
-if __name__ == '__main__':
-  ray.init(num_cpus=128)
+def main(num_cpus:int=128, object_name:str="Shape1"):
+  ray.init(num_cpus=num_cpus)
 
   angle_step = np.pi/6
   section_step = 0.025
@@ -29,7 +29,7 @@ if __name__ == '__main__':
   xx = np.stack(np.meshgrid(theta, phi, section_disp, UCB_alpha), axis=-1)
   xx_flatten = xx.reshape(-1, xx.shape[-1])
 
-  results = [main.remote(x) for x in xx_flatten]
+  results = [run_exp.remote(x, object_name) for x in xx_flatten]
   results = np.array(ray.get(results))
   err = results[:, 0]
   step = results[:, 1]
@@ -45,3 +45,6 @@ if __name__ == '__main__':
   data = pd.DataFrame(data)
   data.to_csv('../test/results/data.csv')
   print(err, step)
+
+if __name__ == '__main__':
+  dcargs.cli(main)
