@@ -101,19 +101,25 @@ def polar_to_cartisian(points_polar):
   return points
 
 class Plotter():
-  def __init__(self, num_figs) -> None:
+  def __init__(self, num_figs, if_plot = True) -> None:
     self.num_figs = num_figs
     self.row = 1
     self.current_fig_id = np.ones(num_figs[0]+1, dtype=np.int)
-    self.fig = plt.figure(figsize=(8*num_figs[1],6*num_figs[0]))
+    self.if_plot = if_plot
+    if if_plot:
+      self.fig = plt.figure(figsize=(8*num_figs[1],6*num_figs[0]))
 
   def create_ax(self, projection=None):
+    if not self.if_plot:
+      return
     fig_id = self.num_figs[1] * (self.row-1) + self.current_fig_id[self.row]
     ax = self.fig.add_subplot(*self.num_figs,fig_id, projection=projection)
     self.current_fig_id[self.row] += 1
     return ax
 
   def plot_2d(self, datas, title, c = None, axis_name = ['x', 'y']):
+    if not self.if_plot:
+      return
     ax = self.create_ax()
     for data in datas:
       if c is None:
@@ -127,6 +133,8 @@ class Plotter():
     ax.set_title(title)
 
   def plot_heat(self, data, title, axis_name = ['x', 'y']):
+    if not self.if_plot:
+      return
     ax = self.create_ax()
     data = np.swapaxes(data, 0, 1)
     xlabels = ['{:,.2f}'.format(x) for x in data[0,:,0]]
@@ -139,6 +147,8 @@ class Plotter():
     g.set_yticklabels(ylabels)
 
   def plot_polar(self, data, title, c = None):
+    if not self.if_plot:
+      return
     ax = self.create_ax('polar')
     if c is None:
       ax.plot(data[:,0], data[:,1])
@@ -149,6 +159,8 @@ class Plotter():
     ax.set_title(title)
 
   def plot_3d(self, datas, title, c = None, axis_name = ['x', 'y', 'z'], true_aspect=False, plane_pose = None, alpha=None):
+    if not self.if_plot:
+      return
     ax = self.create_ax('3d')
     if alpha is None:
       alpha = np.ones(len(datas))
@@ -175,6 +187,8 @@ class Plotter():
       ax.set_box_aspect((np.ptp(data[:,0]), np.ptp(data[:,1]), np.ptp(data[:,2])))
 
   def save(self, path):
+    if not self.if_plot:
+      return
     self.fig.savefig(path)
     plt.close(self.fig)
 

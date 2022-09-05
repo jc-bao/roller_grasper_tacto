@@ -58,23 +58,26 @@ def eval_section(y_mu, y_var, hole_shape_polar):
   var = torch.sum(pdf * ((x_min[:-1,0] - mean)**2))
   return mean, var
 
-def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), explore_policy = 'bo', UCB_alpha = 500):
+def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 500, if_plot = False):
   # object SLAM parameters
   n_phi = 20
   n_theta = n_phi * 2
   section_width = 0.025
   angle_step = torch.pi/n_phi
-  max_explore_time = 5
+  max_explore_time = 10
   hole_angle = np.array([0, 0])
   points_mean = 0
   points_std = 0.08
   # init_explore_section = np.array([np.pi, np.pi/3, 0]) # swap[2pi, pi, -0.06,-0.03,0.03,0.06]
-  # explore_policy = ['random', 'bo'][1] # swap 
+  if UCB_alpha < 0:
+    explore_policy = 'random' # swap 
+  else:
+    explore_policy = 'bo'
   # UCB_alpha = 100 # swap range [0, 100, 10000] 
   object_name = 'Shape1'
   stop_bar = -0.03
 
-  plotter = Plotter(num_figs=np.array([max_explore_time+2, 7],dtype=np.int))
+  plotter = Plotter(num_figs=np.array([max_explore_time+2, 7],dtype=np.int), if_plot=if_plot)
   # load the data
   new_pcd = o3d.io.read_point_cloud(f"../test/assets/objects/{object_name}.ply")
   points = np.asarray(new_pcd.points)

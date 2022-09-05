@@ -6,18 +6,25 @@ import pandas as pd
 @ray.remote
 def main(x):
   init_explore_section = x[:3]
-  explore_policy = 'bo'
   UCB_alpha = x[3]
-  return run_bo(init_explore_section, explore_policy, UCB_alpha)
+  return run_bo(init_explore_section, UCB_alpha)
   
 
 if __name__ == '__main__':
-  UCB_alpha = np.array([500])
-  theta = np.array([0])
-  phi = np.arange(-np.pi/2, np.pi/2, np.pi/4)
-  section_disp = np.array([0])
+  ray.init(num_cpus=128)
+
+  angle_step = np.pi/18
+  section_step = 0.025
+
+  UCB_alpha = np.array([-1, 1, 500, 50000])
+
+  theta = np.arange(-np.pi, np.pi, angle_step)
+  phi = np.arange(-np.pi/2, np.pi/2, angle_step)
+  section_disp = np.arange(-section_step, section_step+0.001, section_step)
+
   xx = np.stack(np.meshgrid(theta, phi, section_disp, UCB_alpha), axis=-1)
   xx_flatten = xx.reshape(-1, xx.shape[-1])
+
   results = [main.remote(x) for x in xx_flatten]
   results = np.array(ray.get(results))
   err = results[:, 0]
@@ -26,9 +33,11 @@ if __name__ == '__main__':
     'theta': xx_flatten[..., 0], 
     'phi': xx_flatten[..., 1], 
     'disp': xx_flatten[..., 2], 
+    'alpha': xx_flatten[..., 3],
     'err': err, 
-    'step': step
+    'step': step, 
+    'success': (err > -0.035).astype(np.float32), 
   }
   data = pd.DataFrame(data)
-  data.save_csv('../test/results/data.csv')
+  data.to_csv('../test/results/data.csv')
   print(err, step)
