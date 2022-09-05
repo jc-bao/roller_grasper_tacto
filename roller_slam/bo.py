@@ -171,7 +171,7 @@ def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 5
     # enumerate all possible orientations
     sec_starts = np.zeros((n_theta, n_phi, 20))
     sec_err_mu = -np.ones((n_theta, n_phi, 20)) # ndarray(n_orientation, n_section)
-    sec_err_var = (1e-6)*np.ones((n_theta, n_phi, 20))
+    sec_err_var = (1e-7)*np.ones((n_theta, n_phi, 20))
     obj_err_mu = np.zeros((n_theta, n_phi)) 
     obj_err_var = np.zeros((n_theta, n_phi))
     for i in trange(n_theta, disable=silent):
@@ -193,7 +193,7 @@ def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 5
           err_mu, err_var = eval_section(section_mu, section_var, hole_shape_polar)
           sec_err_mu[i, j, section_phi_idx] = err_mu
           sec_err_var[i, j, section_phi_idx] = err_var
-        obj_mask = sec_err_var[i,j,:] > 1e-6
+        obj_mask = sec_err_var[i,j,:] > 1e-7
         obj_mu, obj_var = eval_shape(sec_err_mu[i,j][obj_mask], sec_err_var[i,j][obj_mask])
         obj_err_mu[i, j] = obj_mu
         obj_err_var[i, j] = obj_var
@@ -223,7 +223,7 @@ def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 5
     best_sec_err_mu = sec_err_mu[max_pos]
     best_sec_err_var = sec_err_var[max_pos]
     best_sec_start = sec_starts[max_pos]
-    best_sec_mask = best_sec_err_var > 1e-6
+    best_sec_mask = best_sec_err_var > 1e-7
     best_sec_err_mu = best_sec_err_mu[best_sec_mask]
     best_sec_err_var = best_sec_err_var[best_sec_mask]
     best_sec_range = best_sec_start[best_sec_mask] + section_width/2
