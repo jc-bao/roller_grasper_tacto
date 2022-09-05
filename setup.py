@@ -6,7 +6,11 @@ from setuptools import find_packages, setup
 def get_install_requires() -> str:
     return [
         "tqdm",
-        "numpy"
+        "numpy",
+        "open3d",
+        "gpytorch",
+        "matplotlib",
+        "ray"
     ]
 
 setup(

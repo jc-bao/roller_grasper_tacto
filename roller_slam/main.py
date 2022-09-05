@@ -12,4 +12,7 @@ if __name__ == '__main__':
   all_explore_values = np.zeros((phi.shape[0], 3))
   all_explore_values[:,1] = phi
   results = [main.remote(x) for x in all_explore_values]
-  print(ray.get(results))
+  results = np.array(ray.get(results))
+  err = results[:, 0]
+  step = results[:, 1]
+  prin(err, step)
