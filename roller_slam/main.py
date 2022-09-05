@@ -15,4 +15,4 @@ if __name__ == '__main__':
   results = np.array(ray.get(results))
   err = results[:, 0]
   step = results[:, 1]
-  prin(err, step)
+  print(err, step)
