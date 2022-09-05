@@ -58,13 +58,12 @@ def eval_section(y_mu, y_var, hole_shape_polar):
   var = torch.sum(pdf * ((x_min[:-1,0] - mean)**2))
   return mean, var
 
-def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 500, if_plot = False, object_name='Shape1', silent=True):
+def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 500, if_plot = False, object_name='Shape1', silent=True, max_explore_time = 10):
   # object SLAM parameters
   n_phi = 20
   n_theta = n_phi * 2
   section_width = 0.025
   angle_step = torch.pi/n_phi
-  max_explore_time = 10
   hole_angle = np.array([0, 0])
   points_mean = 0
   points_std = 0.08
@@ -274,4 +273,4 @@ def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 5
   return final_err, explore_step+1 
 
 if __name__ == '__main__':
-  run_bo(object_name='Shape2', if_plot=True, silent=False)
+  run_bo(object_name='Shape2', if_plot=True, silent=False, max_explore_time=10)
