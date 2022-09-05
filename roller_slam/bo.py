@@ -91,7 +91,7 @@ def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 5
   points_dense = points_dense/np.max(points_dense,0)*0.1
 
   hole_rot = R.from_euler('zy', hole_angle)
-  plotter.plot_3d([points_dense], 'object point clouds', true_aspect=True, plane_pose=np.append(hole_angle,0))
+  plotter.plot_3d([points_dense], 'object point clouds', true_aspect=True, plane_pose=np.append(hole_angle,0), alpha=[0.5])
 
   # get the hole shape
   hole_shape, hole_shape_polar = get_hole_shape(points_dense, hole_rot)
@@ -115,7 +115,7 @@ def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 5
   all_ori = np.stack(np.meshgrid(np.linspace(-np.pi, np.pi, n_theta), np.linspace(-np.pi/2, np.pi/2, n_phi)), axis=-1).transpose(1,0,2)
   for i in range(n_theta):
     for j in range(n_phi):
-      rot = R.from_euler('zy', all_ori[i,j], degrees=False)
+      rot = R.from_euler('zy', -all_ori[i,j], degrees=False)
       pred_point_rot = (rot.apply(pred_point))
       pred_point_spherical_rot = cartisian_to_spherical(pred_point_rot)
       pred_point_rot = spherical_to_cartisian(pred_point_spherical_rot)
@@ -273,4 +273,4 @@ def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 5
   return final_err, explore_step+1 
 
 if __name__ == '__main__':
-  run_bo(object_name='Shape2', if_plot=True, silent=False, max_explore_time=10)
+  run_bo(object_name='Shape3', if_plot=True, silent=False, max_explore_time=10)

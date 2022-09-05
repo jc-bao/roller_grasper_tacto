@@ -220,7 +220,7 @@ def get_hole_shape(points, orn:R):
 def get_section_points(points, section_poses, section_width = 0.05):
   mask_in = np.zeros(points.shape[0], dtype=bool)
   for section_pos in section_poses:
-    orn = R.from_euler('xyz', np.append(section_pos[:2],0))
+    orn = R.from_euler('zy', -section_pos[:2])
     disp = section_pos[2]
     z_start = disp - section_width/2
     z_end = disp + section_width/2
