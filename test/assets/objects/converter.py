@@ -6,7 +6,9 @@ def main():
   filename = "Shape1"
   mesh = o3d.io.read_triangle_mesh(filename+".stl")
   pcd = mesh.sample_points_uniformly(number_of_points=500)
+  pcd_dense = mesh.sample_points_uniformly(number_of_points=5000)
   o3d.io.write_point_cloud(filename+".ply", pcd)
+  o3d.io.write_point_cloud(filename+"_dense.ply", pcd_dense)
 
   # In bo.py
   new_pcd = o3d.io.read_point_cloud(filename+".ply")

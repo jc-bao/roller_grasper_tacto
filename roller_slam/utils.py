@@ -1,3 +1,4 @@
+import enum
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FormatStrFormatter
@@ -102,26 +103,31 @@ def polar_to_cartisian(points_polar):
 class Plotter():
   def __init__(self, num_figs) -> None:
     self.num_figs = num_figs
-    self.current_fig_id = 1
-    self.fig = plt.figure(figsize=(5, 5*num_figs))
+    self.row = 1
+    self.current_fig_id = np.ones(num_figs[0]+1, dtype=np.int)
+    self.fig = plt.figure(figsize=(8*num_figs[1],6*num_figs[0]))
+
+  def create_ax(self, projection=None):
+    fig_id = self.num_figs[1] * (self.row-1) + self.current_fig_id[self.row]
+    ax = self.fig.add_subplot(*self.num_figs,fig_id, projection=projection)
+    self.current_fig_id[self.row] += 1
+    return ax
 
   def plot_2d(self, datas, title, c = None, axis_name = ['x', 'y']):
-    ax = self.fig.add_subplot(self.num_figs,1,self.current_fig_id)
-    self.current_fig_id += 1
+    ax = self.create_ax()
     for data in datas:
       if c is None:
         ax.plot(data[:,0], data[:,1])
         # ax.set_box_aspect(np.ptp(data[:,0])/np.ptp(data[:,1]))
       else:
         ax.plot(data[:,0], data[:,1])
-        ax.fill_between(data[:,0], data[:,1]-c*1.95, data[:,1]+c*1.95, alpha=0.2)
+        ax.fill_between(data[:,0], data[:,1]-c, data[:,1]+c, alpha=0.2)
     ax.set_xlabel(axis_name[0])
     ax.set_ylabel(axis_name[1])
     ax.set_title(title)
 
   def plot_heat(self, data, title, axis_name = ['x', 'y']):
-    ax = self.fig.add_subplot(self.num_figs,1,self.current_fig_id)
-    self.current_fig_id += 1
+    ax = self.create_ax()
     data = np.swapaxes(data, 0, 1)
     xlabels = ['{:,.2f}'.format(x) for x in data[0,:,0]]
     ylabels = ['{:,.2f}'.format(y) for y in data[:,0,1]]
@@ -131,12 +137,9 @@ class Plotter():
     ax.set_title(title)
     g.set_xticklabels(xlabels)
     g.set_yticklabels(ylabels)
-    # ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-    # ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
   def plot_polar(self, data, title, c = None):
-    ax = self.fig.add_subplot(self.num_figs,1,self.current_fig_id, projection='polar')
-    self.current_fig_id += 1
+    ax = self.create_ax('polar')
     if c is None:
       ax.plot(data[:,0], data[:,1])
     else:
@@ -145,47 +148,25 @@ class Plotter():
       plt.colorbar(sc)
     ax.set_title(title)
 
-  def plot_3d(self, datas, title, c = None, axis_name = ['x', 'y', 'z'], true_aspect=False):
-    ax = self.fig.add_subplot(self.num_figs,1,self.current_fig_id, projection='3d')
-    self.current_fig_id += 1
-    for data in datas:
+  def plot_3d(self, datas, title, c = None, axis_name = ['x', 'y', 'z'], true_aspect=False, plane_pose = None, alpha=None):
+    ax = self.create_ax('3d')
+    if alpha is None:
+      alpha = np.ones(len(datas))
+    for i, data in enumerate(datas):
       if c is None:
-        ax.scatter(data[:,0], data[:,1], data[:,2])
+        ax.scatter(data[:,0], data[:,1], data[:,2], alpha=alpha[i])
       else:
         cm = plt.cm.get_cmap('viridis')
-        sc = ax.scatter(data[:,0], data[:,1], data[:,2], s=10, cmap=cm, c=c)
+        sc = ax.scatter(data[:,0], data[:,1], data[:,2], s=10, cmap=cm, c=c, alpha=alpha[i])
         self.cb = plt.colorbar(sc)
-    ax.set_xlabel(axis_name[0])
-    ax.set_ylabel(axis_name[1])
-    ax.set_zlabel(axis_name[2])
-    ax.set_title(title)
-    if true_aspect:
-      ax.set_box_aspect((np.ptp(data[:,0]), np.ptp(data[:,1]), np.ptp(data[:,2])))
-
-  def plot_3d_surface(self, datas, title, c = None, axis_name = ['x', 'y', 'z'], true_aspect=False):
-    ax = self.fig.add_subplot(self.num_figs,1,self.current_fig_id, projection='3d')
-    def function(data, a, b, c, d, e, f, g, h, i, j, k):
-      x = data[..., 0]
-      y = data[..., 1]
-      return a+b*x+c*y+d*x*x+e*y*y+f*x*x*x+g*y*y*y+h*x*x*x*x+i*y*y*y*y+j*x*x*x*x*x+k*y*y*y*y*y
-    for data in datas:
-      model_x_data = np.linspace(min(data[:,0]), max(data[:,1]), 100)
-      model_y_data = np.linspace(min(data[:,0]), max(data[:,1]), 100)
-      # create coordinate arrays for vectorized evaluations
-      X, Y = np.meshgrid(model_x_data, model_y_data)
-      XY = np.stack([X, Y], axis=2)
-      # calculate Z coordinate array
-      parameters, covariance = curve_fit(function, data[:,:2], data[:,2])
-      Z = function(XY, *parameters)
-      self.current_fig_id += 1
-      if c is None:
-        ax.plot_surface(X, Y, Z)
-      else:
-        # cm = plt.cm.get_cmap('viridis')
-        parameters, covariance = curve_fit(function, data[:,:2], c)
-        C = function(XY, *parameters)
-        sc = ax.plot_surface(X, Y, Z, facecolors=plt.cm.jet(C))
-        plt.colorbar(sc)
+    if plane_pose is not None:
+      xx, yy = np.meshgrid(np.linspace(-0.1, 0.1, 10), np.linspace(-0.1, 0.1, 10))
+      zz = plane_pose[-1]*np.ones_like(xx)
+      plane = np.stack((xx,yy,zz),axis=-1)
+      plane_shape = plane.shape
+      plane_orn = R.from_euler('zy', plane_pose[:2])
+      plane_rot = plane_orn.apply(plane.reshape(-1,3)).reshape(plane_shape)
+      ax.plot_surface(plane_rot[...,0], plane_rot[...,1], plane_rot[...,2], color='r', alpha=0.2)
     ax.set_xlabel(axis_name[0])
     ax.set_ylabel(axis_name[1])
     ax.set_zlabel(axis_name[2])
@@ -209,14 +190,14 @@ def get_hole_shape(points, orn:R):
   points_projected = points_transformed[:, :2]
   # get convex hull
   # hull = ConvexHull(points_projected)
-  angle_step = np.pi/24
+  angle_step = np.pi/60
   angle = np.arange(-np.pi, np.pi, angle_step)
   points_polar = cartisian_to_polar(points_projected)
   points_angle_grid = (points_polar[:,0]//angle_step)*angle_step
   filtered_points_polar = []
   for a in angle:
-    mask = np.abs(points_angle_grid - a)<1e-3
-    if mask.any():
+    mask = np.abs(points_angle_grid - a)<1e-4
+    if mask.sum() > 2:
       filtered_points_polar.append(np.array([a, points_polar[mask,1].max()]))
   filtered_points_polar = np.array(filtered_points_polar)
   filtered_points_cartesian = polar_to_cartisian(filtered_points_polar)
@@ -260,14 +241,14 @@ class GaussianProcess():
     self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
     self.model = ExactGPModel(train_x, train_y, self.likelihood)
     hypers = {
-      'covar_module.base_kernel.lengthscale': torch.tensor(0.2), # 1.5 for sphere
+      'covar_module.base_kernel.lengthscale': torch.tensor(0.3), # 1.5 for sphere
       # 'covar_module.kernels.1.base_kernel.lengthscale': torch.tensor(0.5),
     }
     self.model_params = self.model.initialize(**hypers)
 
     self.model.train()
     self.likelihood.train()
-    optimizer = torch.optim.Adam(self.model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(self.model.parameters(), lr=0.1)
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.model)
     for i in (pbar := trange(train_num)):
       # Zero gradients from previous iteration
