@@ -264,7 +264,7 @@ def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), explore_polic
   final_err = true_object_err[max_pos]
   plotter.plot_3d([hole_3d, insert_points], title=f'final inseration orientation={best_ori}, \n err={final_err}', true_aspect=True, alpha=[1,0.05])
 
-  plotter.save(f'../test/results/{object_name}_{explore_policy}_{UCB_alpha}_err{final_err:.2f}_step{explore_step+1}_init{init_explore_section[0]:.2f}-{init_explore_section[1]:.2f}-{init_explore_section[2]:.2f}.png')
+  plotter.save(f'../test/results/{object_name}_{explore_policy}_{UCB_alpha}_err{final_err:.2f}_step{explore_step+1}_init{init_explore_section[0]:.2f}_{init_explore_section[1]:.2f}_{init_explore_section[2]:.2f}.png')
 
   return final_err, explore_step+1 
 
