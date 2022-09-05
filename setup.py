@@ -10,7 +10,9 @@ def get_install_requires() -> str:
         "open3d",
         "gpytorch",
         "matplotlib",
-        "ray"
+        "ray", 
+        "pandas",
+        "seaborn"
     ]
 
 setup(
