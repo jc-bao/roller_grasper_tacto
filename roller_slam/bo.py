@@ -76,6 +76,9 @@ def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 5
   # UCB_alpha = 100 # swap range [0, 100, 10000] 
   stop_bar = -0.03
 
+  # torch
+  torch.set_num_threads(2)
+
   plotter = Plotter(num_figs=np.array([max_explore_time+2, 7],dtype=np.int), if_plot=if_plot)
   # load the data
   new_pcd = o3d.io.read_point_cloud(f"../test/assets/objects/{object_name}.ply")
