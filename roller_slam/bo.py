@@ -58,7 +58,7 @@ def eval_section(y_mu, y_var, hole_shape_polar):
   var = torch.sum(pdf * ((x_min[:-1,0] - mean)**2))
   return mean, var
 
-def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 500, if_plot = False):
+def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 500, if_plot = False, object_name='Shape1'):
   # object SLAM parameters
   n_phi = 20
   n_theta = n_phi * 2
@@ -74,7 +74,6 @@ def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 5
   else:
     explore_policy = 'bo'
   # UCB_alpha = 100 # swap range [0, 100, 10000] 
-  object_name = 'Shape1'
   stop_bar = -0.03
 
   plotter = Plotter(num_figs=np.array([max_explore_time+2, 7],dtype=np.int), if_plot=if_plot)
@@ -272,4 +271,4 @@ def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 5
   return final_err, explore_step+1 
 
 if __name__ == '__main__':
-  run_bo()
+  run_bo(object_name='Shape2', if_plot=True)
