@@ -2,12 +2,16 @@ from roller_slam.bo import run_bo
 import ray
 import numpy as np
 import pandas as pd
+import tqdm
+from functools import partialmethod
 
 @ray.remote
 def main(x):
   init_explore_section = x[:3]
   UCB_alpha = x[3]
-  return run_bo(init_explore_section, UCB_alpha)
+  results = run_bo(init_explore_section, UCB_alpha)
+  print('====finished====')
+  return results
   
 
 if __name__ == '__main__':

@@ -58,7 +58,7 @@ def eval_section(y_mu, y_var, hole_shape_polar):
   var = torch.sum(pdf * ((x_min[:-1,0] - mean)**2))
   return mean, var
 
-def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 500, if_plot = False, object_name='Shape1'):
+def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 500, if_plot = False, object_name='Shape1', silent=True):
   # object SLAM parameters
   n_phi = 20
   n_theta = n_phi * 2
@@ -151,7 +151,7 @@ def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 5
     normed_section_point_spherical = cartisian_to_spherical(normed_section_points)
     normed_section_point_tensor = torch.tensor(normed_section_point_spherical)
     try:
-      gp_shape = GaussianProcess(normed_section_point_tensor[:,:2], normed_section_point_tensor[:,2], train_num=100)
+      gp_shape = GaussianProcess(normed_section_point_tensor[:,:2], normed_section_point_tensor[:,2], train_num=100, silent=silent)
     except:
       print('gaussian model encounter an error')
       return -1, -1
@@ -175,7 +175,7 @@ def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 5
     sec_err_var = (1e-6)*np.ones((n_theta, n_phi, 20))
     obj_err_mu = np.zeros((n_theta, n_phi)) 
     obj_err_var = np.zeros((n_theta, n_phi))
-    for i in trange(n_theta):
+    for i in trange(n_theta, disable=silent):
       for j in range(n_phi):
         rot = R.from_euler('zy', -pred_point_spherical[i,j,:2])
         pred_point_rot = (rot.apply(pred_point)).reshape(n_theta, n_phi, 3)
@@ -274,4 +274,4 @@ def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 5
   return final_err, explore_step+1 
 
 if __name__ == '__main__':
-  run_bo(object_name='Shape2', if_plot=True)
+  run_bo(object_name='Shape2', if_plot=True, silent=False)

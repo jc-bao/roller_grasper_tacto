@@ -243,7 +243,8 @@ class ExactGPModel(gpytorch.models.ExactGP):
     return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
 class GaussianProcess():
-  def __init__(self, train_x, train_y, train_num = 100):
+  def __init__(self, train_x, train_y, train_num = 100, silent = False):
+    self.silent = silent
     # expand data to make the data periodic
     train_x_full = []
     train_y_full = []
@@ -264,7 +265,7 @@ class GaussianProcess():
     self.likelihood.train()
     optimizer = torch.optim.Adam(self.model.parameters(), lr=0.1)
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.model)
-    for i in (pbar := trange(train_num)):
+    for i in (pbar := trange(train_num, disable=silent)):
       # Zero gradients from previous iteration
       optimizer.zero_grad()
       # Output from model
