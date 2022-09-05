@@ -9,7 +9,7 @@ from functools import partialmethod
 def main(x):
   init_explore_section = x[:3]
   UCB_alpha = x[3]
-  results = run_bo(init_explore_section, UCB_alpha)
+  results = run_bo(init_explore_section, UCB_alpha, object_name="Shape1")
   print('====finished====')
   return results
   
