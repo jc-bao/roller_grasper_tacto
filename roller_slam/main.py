@@ -17,14 +17,14 @@ def main(x):
 if __name__ == '__main__':
   ray.init(num_cpus=128)
 
-  angle_step = np.pi/18
+  angle_step = np.pi/6
   section_step = 0.025
 
   UCB_alpha = np.array([-1, 1, 500, 50000])
 
   theta = np.arange(-np.pi, np.pi, angle_step)
   phi = np.arange(-np.pi/2, np.pi/2, angle_step)
-  section_disp = np.arange(-section_step, section_step+0.001, section_step)
+  section_disp = np.arange(0, 0.001, section_step)
 
   xx = np.stack(np.meshgrid(theta, phi, section_disp, UCB_alpha), axis=-1)
   xx_flatten = xx.reshape(-1, xx.shape[-1])

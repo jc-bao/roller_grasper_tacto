@@ -282,8 +282,8 @@ class GaussianProcess():
 
     # Make predictions by feeding model through likelihood
     with torch.no_grad(), gpytorch.settings.fast_pred_var():
-      theta = torch.arange(-np.pi, np.pi, step, dtype=torch.float64)
-      phi = torch.arange(-np.pi/2, np.pi/2, step, dtype=torch.float64)
+      theta = torch.arange(-np.pi, np.pi, step, dtype=torch.float32)
+      phi = torch.arange(-np.pi/2, np.pi/2, step, dtype=torch.float32)
       x_pred = torch.stack(torch.meshgrid(theta, phi), dim=-1).view(-1, 2)
       observed_pred = self.likelihood(self.model(x_pred))
 

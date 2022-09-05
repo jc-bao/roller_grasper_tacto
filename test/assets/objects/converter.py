@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def main():
-  filename = "Shape3"
+  filename = "Shape5"
   mesh = o3d.io.read_triangle_mesh(filename+".stl")
   pcd = mesh.sample_points_uniformly(number_of_points=500)
   pcd_dense = mesh.sample_points_uniformly(number_of_points=5000)

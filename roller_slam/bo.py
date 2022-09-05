@@ -91,7 +91,7 @@ def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 5
   points_dense = points_dense/np.max(points_dense,0)*0.1
 
   hole_rot = R.from_euler('zy', hole_angle)
-  plotter.plot_3d([points_dense], 'object point clouds', true_aspect=True, plane_pose=np.append(hole_angle,0), alpha=[0.5])
+  plotter.plot_3d([points_dense], 'object point clouds', true_aspect=True, plane_pose=np.append(hole_angle,0), alpha=[0.1])
 
   # get the hole shape
   hole_shape, hole_shape_polar = get_hole_shape(points_dense, hole_rot)
@@ -148,11 +148,11 @@ def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 5
     # fit a probabilistic model to the section points
     normed_section_points = (section_points - points_mean) / points_std
     normed_section_point_spherical = cartisian_to_spherical(normed_section_points)
-    normed_section_point_tensor = torch.tensor(normed_section_point_spherical)
+    normed_section_point_tensor = torch.tensor(normed_section_point_spherical, dtype=torch.float32)
     try:
       gp_shape = GaussianProcess(normed_section_point_tensor[:,:2], normed_section_point_tensor[:,2], train_num=100, silent=silent)
-    except:
-      print('gaussian model encounter an error')
+    except Exception as e:
+      print(e, 'gaussian model encounter an error')
       return -1, -1
     x_pred, y_pred_mu, y_pred_var = gp_shape.predict(step=angle_step)
     normed_pred_point_spherical = torch.cat((x_pred, y_pred_mu.unsqueeze(-1)), dim=-1).detach().numpy()
@@ -273,4 +273,4 @@ def run_bo(init_explore_section = np.array([np.pi/2, np.pi/3, 0]), UCB_alpha = 5
   return final_err, explore_step+1 
 
 if __name__ == '__main__':
-  run_bo(object_name='Shape3', if_plot=True, silent=False, max_explore_time=10)
+  run_bo(object_name='Shape1', UCB_alpha=50000, if_plot=True, silent=False, max_explore_time=10)
