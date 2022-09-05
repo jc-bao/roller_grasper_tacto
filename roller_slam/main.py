@@ -43,7 +43,7 @@ def main(num_cpus:int=128, object_name:str="Shape1"):
     'success': (err > -0.035).astype(np.float32), 
   }
   data = pd.DataFrame(data)
-  data.to_csv('../test/results/data.csv')
+  data.to_csv(f'../test/results/{object_name}.csv')
   print(err, step)
 
 if __name__ == '__main__':

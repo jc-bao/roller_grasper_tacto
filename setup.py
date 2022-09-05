@@ -12,7 +12,8 @@ def get_install_requires() -> str:
         "matplotlib",
         "ray", 
         "pandas",
-        "seaborn"
+        "seaborn",
+        "dcargs"
     ]
 
 setup(
